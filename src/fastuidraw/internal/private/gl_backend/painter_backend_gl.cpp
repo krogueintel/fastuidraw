@@ -244,6 +244,7 @@ private:
 
   PainterBackendGL *m_pr;
   reference_counted_ptr<painter_vao_pool> m_pool;
+  reference_counted_ptr<painter_vao_buffers> m_buffers;
   painter_vao m_vao;
   unsigned int m_attributes_written, m_indices_written;
   std::list<DrawEntry> m_draws;
@@ -369,46 +370,15 @@ DrawCommand(const reference_counted_ptr<painter_vao_pool> &hnd,
             PainterBackendGL *pr):
   m_pr(pr),
   m_pool(hnd),
-  m_vao(m_pool->request_vao()),
   m_attributes_written(0),
   m_indices_written(0)
 {
-  /* map the buffers and set to the c_array<> fields of
-   * fastuidraw::PainterDraw to the mapping location.
-   */
-  void *attr_bo, *index_bo, *data_bo, *header_bo;
-  uint32_t flags;
-
-  flags = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_FLUSH_EXPLICIT_BIT;
-
-  fastuidraw_glBindBuffer(GL_ARRAY_BUFFER, m_vao.m_attribute_bo);
-  attr_bo = fastuidraw_glMapBufferRange(GL_ARRAY_BUFFER, 0, hnd->attribute_buffer_size(), flags);
-  FASTUIDRAWassert(attr_bo != nullptr);
-
-  fastuidraw_glBindBuffer(GL_ARRAY_BUFFER, m_vao.m_header_bo);
-  header_bo = fastuidraw_glMapBufferRange(GL_ARRAY_BUFFER, 0, hnd->header_buffer_size(), flags);
-  FASTUIDRAWassert(header_bo != nullptr);
-
-  fastuidraw_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_vao.m_index_bo);
-  index_bo = fastuidraw_glMapBufferRange(GL_ELEMENT_ARRAY_BUFFER, 0, hnd->index_buffer_size(), flags);
-  FASTUIDRAWassert(index_bo != nullptr);
-
-  fastuidraw_glBindBuffer(GL_ARRAY_BUFFER, m_vao.m_data_bo);
-  data_bo = fastuidraw_glMapBufferRange(GL_ARRAY_BUFFER, 0, hnd->data_buffer_size(), flags);
-  FASTUIDRAWassert(data_bo != nullptr);
-
-  m_attributes = c_array<PainterAttribute>(static_cast<PainterAttribute*>(attr_bo),
-                                           params.attributes_per_buffer());
-  m_indices = c_array<PainterIndex>(static_cast<PainterIndex*>(index_bo),
-                                    params.indices_per_buffer());
-  m_store = c_array<uvec4>(static_cast<uvec4*>(data_bo),
-                                            hnd->data_buffer_size() / sizeof(uvec4));
-
-  m_header_attributes = c_array<uint32_t>(static_cast<uint32_t*>(header_bo),
-                                          params.attributes_per_buffer());
-
-  fastuidraw_glBindBuffer(GL_ARRAY_BUFFER, 0);
-  fastuidraw_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+  FASTUIDRAWunused(params);
+  m_buffers = m_pool->request_vao_buffers();
+  m_attributes = m_buffers->attribute_buffer();
+  m_indices = m_buffers->index_buffer();
+  m_store = m_buffers->data_buffer();
+  m_header_attributes = m_buffers->header_buffer();
 }
 
 bool
@@ -557,21 +527,12 @@ unmap_implement(unsigned int attributes_written,
   add_entry(indices_written);
   FASTUIDRAWassert(m_indices_written == indices_written);
 
-  fastuidraw_glBindBuffer(GL_ARRAY_BUFFER, m_vao.m_attribute_bo);
-  fastuidraw_glFlushMappedBufferRange(GL_ARRAY_BUFFER, 0, attributes_written * sizeof(PainterAttribute));
-  fastuidraw_glUnmapBuffer(GL_ARRAY_BUFFER);
-
-  fastuidraw_glBindBuffer(GL_ARRAY_BUFFER, m_vao.m_header_bo);
-  fastuidraw_glFlushMappedBufferRange(GL_ARRAY_BUFFER, 0, attributes_written * sizeof(uint32_t));
-  fastuidraw_glUnmapBuffer(GL_ARRAY_BUFFER);
-
-  fastuidraw_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_vao.m_index_bo);
-  fastuidraw_glFlushMappedBufferRange(GL_ELEMENT_ARRAY_BUFFER, 0, indices_written * sizeof(PainterIndex));
-  fastuidraw_glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
-
-  fastuidraw_glBindBuffer(GL_ARRAY_BUFFER, m_vao.m_data_bo);
-  fastuidraw_glFlushMappedBufferRange(GL_ARRAY_BUFFER, 0, data_store_written * sizeof(uvec4));
-  fastuidraw_glUnmapBuffer(GL_ARRAY_BUFFER);
+  m_vao = m_pool->request_vao(*m_buffers,
+			      attributes_written,
+			      indices_written,
+			      data_store_written);
+  m_pool->release_vao_buffer(m_buffers);
+  m_buffers = nullptr;
 }
 
 void
@@ -1109,24 +1070,19 @@ set_gl_state(RenderTargetState prev_state,
       GLuint ubo;
       unsigned int size_generics(glsl::PainterShaderRegistrarGLSL::ubo_size());
       unsigned int size_bytes(sizeof(uint32_t) * size_generics);
-      void *ubo_mapped;
 
       /* Grabs and binds the buffer */
-      ubo = m_pool->uniform_ubo(size_bytes, GL_UNIFORM_BUFFER);
+      ubo = m_pool->uniform_ubo(GL_UNIFORM_BUFFER);
       FASTUIDRAWassert(ubo != 0);
 
       if (!m_uniform_ubo_ready)
         {
-          c_array<uint32_t> ubo_mapped_ptr;
-          ubo_mapped = fastuidraw_glMapBufferRange(GL_UNIFORM_BUFFER, 0, size_bytes,
-                                                   GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT
-                                                   | GL_MAP_FLUSH_EXPLICIT_BIT);
-          ubo_mapped_ptr = c_array<uint32_t>(static_cast<uint32_t*>(ubo_mapped),
-                                                 size_generics);
-
-          m_reg_gl->fill_uniform_buffer(m_surface_gl->m_viewport, ubo_mapped_ptr);
-          fastuidraw_glFlushMappedBufferRange(GL_UNIFORM_BUFFER, 0, size_bytes);
-          fastuidraw_glUnmapBuffer(GL_UNIFORM_BUFFER);
+	  m_uniform_ubo_values.resize(size_generics);
+	  m_reg_gl->fill_uniform_buffer(m_surface_gl->m_viewport,
+					make_c_array(m_uniform_ubo_values));
+	  fastuidraw_glBufferData(GL_UNIFORM_BUFFER, size_bytes,
+				  &m_uniform_ubo_values[0],
+				  GL_STREAM_DRAW);
           m_uniform_ubo_ready = true;
         }
 

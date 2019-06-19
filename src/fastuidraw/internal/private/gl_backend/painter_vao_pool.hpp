@@ -28,8 +28,48 @@
 
 #include <private/gl_backend/tex_buffer.hpp>
 #include <private/gl_backend/opengl_trait.hpp>
+#include <private/util_private.hpp>
 
 namespace fastuidraw { namespace gl { namespace detail {
+class painter_vao_pool;
+
+class painter_vao_buffers:public reference_counted<painter_vao_buffers>::non_concurrent
+{
+public: 
+  c_array<PainterIndex>
+  index_buffer(void)
+  {
+    return make_c_array(m_index_buffer);
+  }
+
+  c_array<PainterAttribute>
+  attribute_buffer(void)
+  {
+    return make_c_array(m_attribute_buffer);
+  }
+ 
+  c_array<uvec4>
+  data_buffer(void)
+  {
+    return make_c_array(m_data_buffer);
+  }
+ 
+  c_array<uint32_t>
+  header_buffer(void)
+  {
+    return make_c_array(m_header_buffer);
+  }
+
+private:
+  friend class painter_vao_pool;
+
+  painter_vao_buffers(void){}
+
+  std::vector<uvec4> m_data_buffer;
+  std::vector<uint32_t>  m_header_buffer;
+  std::vector<PainterIndex> m_index_buffer;
+  std::vector<PainterAttribute> m_attribute_buffer;
+};
 
 class painter_vao
 {
@@ -60,7 +100,6 @@ public:
                    unsigned int data_store_binding);
 
   ~painter_vao_pool();
-
   unsigned int
   attribute_buffer_size(void) const
   {
@@ -86,7 +125,8 @@ public:
   }
 
   painter_vao
-  request_vao(void);
+  request_vao(painter_vao_buffers &buffer,
+	      unsigned int, unsigned int, unsigned int);
 
   void
   next_pool(void);
@@ -99,17 +139,38 @@ public:
    * called once.
    */
   GLuint
-  uniform_ubo(unsigned int ubo_size, GLenum target);
+  uniform_ubo(GLenum target);
 
   void
   release_vao(painter_vao &V);
+
+  void
+  release_vao_buffer(reference_counted_ptr<painter_vao_buffers> buffer);
+
+  reference_counted_ptr<painter_vao_buffers>
+  request_vao_buffers(void);
 
 private:
   GLuint
   generate_tbo(GLuint src_buffer, GLenum fmt, unsigned int unit);
 
   GLuint
-  generate_bo(GLenum bind_target, GLsizei psize);
+  generate_bo(GLenum bind_target, GLsizei psize, const void *pdata);
+
+  template<typename T>
+  GLuint
+  generate_bo(GLenum bind_target, c_array<T> pdata)
+  {
+    return generate_bo(bind_target, sizeof(T) * pdata.size(), pdata.c_ptr());
+  }
+
+  template<typename T>
+  void
+  ready_bo(GLuint bo, GLenum bind_target, c_array<T> pdata)
+  {
+    fastuidraw_glBindBuffer(bind_target, bo);
+    fastuidraw_glBufferData(bind_target, sizeof(T) * pdata.size(), pdata.c_ptr(), GL_STREAM_DRAW);
+  }
 
   void
   create_vao(painter_vao &V);
@@ -117,6 +178,7 @@ private:
   void
   release_vao_resources(const painter_vao &V);
 
+  unsigned int m_num_indices, m_num_attributes, m_num_data;
   unsigned int m_attribute_buffer_size, m_header_buffer_size;
   unsigned int m_index_buffer_size;
   int m_blocks_per_data_buffer;
@@ -127,6 +189,7 @@ private:
 
   unsigned int m_current_pool;
   std::vector<std::vector<painter_vao> > m_free_vaos;
+  std::vector<reference_counted_ptr<painter_vao_buffers> > m_free_buffers;
   std::vector<GLuint> m_ubos;
 };
 

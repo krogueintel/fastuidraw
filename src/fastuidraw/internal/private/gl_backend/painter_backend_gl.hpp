@@ -130,6 +130,7 @@ namespace fastuidraw
         reference_counted_ptr<painter_vao_pool> m_pool;
         PainterSurfaceGLPrivate *m_surface_gl;
         bool m_uniform_ubo_ready;
+	std::vector<uint32_t> m_uniform_ubo_values;
         std::vector<GLuint> m_current_context_texture;
         GLuint m_current_coverage_buffer_texture;
         BindingPoints m_binding_points;

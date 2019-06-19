@@ -25,6 +25,9 @@ fastuidraw::gl::detail::painter_vao_pool::
 painter_vao_pool(const PainterEngineGL::ConfigurationGL &params,
                  enum tex_buffer_support_t tex_buffer_support,
                  unsigned int data_store_binding):
+  m_num_indices(params.indices_per_buffer()),
+  m_num_attributes(params.attributes_per_buffer()),
+  m_num_data(params.data_blocks_per_store_buffer()),
   m_attribute_buffer_size(params.attributes_per_buffer() * sizeof(PainterAttribute)),
   m_header_buffer_size(params.attributes_per_buffer() * sizeof(uint32_t)),
   m_index_buffer_size(params.indices_per_buffer() * sizeof(PainterIndex)),
@@ -58,31 +61,23 @@ fastuidraw::gl::detail::painter_vao_pool::
 
 GLuint
 fastuidraw::gl::detail::painter_vao_pool::
-uniform_ubo(unsigned int sz, GLenum target)
+uniform_ubo(GLenum target)
 {
   if (m_ubos[m_current_pool] == 0)
     {
-      m_ubos[m_current_pool] = generate_bo(target, sz);
-    }
-  else
-    {
-      fastuidraw_glBindBuffer(target, m_ubos[m_current_pool]);
+      fastuidraw_glGenBuffers(1, &m_ubos[m_current_pool]);
     }
 
-  #ifndef NDEBUG
-    {
-      GLint psize(0);
-      fastuidraw_glGetBufferParameteriv(target, GL_BUFFER_SIZE, &psize);
-      FASTUIDRAWassert(psize >= static_cast<int>(sz));
-    }
-  #endif
-
+  fastuidraw_glBindBuffer(target, m_ubos[m_current_pool]);
   return m_ubos[m_current_pool];
 }
 
 fastuidraw::gl::detail::painter_vao
 fastuidraw::gl::detail::painter_vao_pool::
-request_vao(void)
+request_vao(painter_vao_buffers &buffer,
+	    unsigned int attributes_written,
+	    unsigned int indices_written,
+	    unsigned int data_store_written)
 {
   painter_vao return_value;
 
@@ -90,10 +85,10 @@ request_vao(void)
     {
       return_value.m_data_store_backing = m_data_store_backing;
       return_value.m_data_store_binding_point = m_data_store_binding;
-      return_value.m_data_bo = generate_bo(GL_ARRAY_BUFFER, m_data_buffer_size);
-      return_value.m_attribute_bo = generate_bo(GL_ARRAY_BUFFER, m_attribute_buffer_size);
-      return_value.m_index_bo = generate_bo(GL_ELEMENT_ARRAY_BUFFER, m_index_buffer_size);
-      return_value.m_header_bo = generate_bo(GL_ARRAY_BUFFER, m_header_buffer_size);
+      return_value.m_data_bo = generate_bo(GL_ARRAY_BUFFER, buffer.data_buffer().sub_array(0, data_store_written));
+      return_value.m_attribute_bo = generate_bo(GL_ARRAY_BUFFER, buffer.attribute_buffer().sub_array(0, attributes_written));
+      return_value.m_index_bo = generate_bo(GL_ELEMENT_ARRAY_BUFFER, buffer.index_buffer().sub_array(0, indices_written));
+      return_value.m_header_bo = generate_bo(GL_ARRAY_BUFFER, buffer.header_buffer().sub_array(0, attributes_written));
       if (m_data_store_backing == glsl::PainterShaderRegistrarGLSL::data_store_tbo)
         {
           return_value.m_data_tbo = generate_tbo(return_value.m_data_bo, GL_RGBA32UI,
@@ -104,6 +99,18 @@ request_vao(void)
   else
     {
       return_value = m_free_vaos[m_current_pool].back();
+      /* set the data for each of the buffers */
+      ready_bo(return_value.m_data_bo, GL_ARRAY_BUFFER, buffer.data_buffer().sub_array(0, data_store_written));
+      ready_bo(return_value.m_attribute_bo, GL_ARRAY_BUFFER, buffer.attribute_buffer().sub_array(0, attributes_written));
+      ready_bo(return_value.m_index_bo, GL_ELEMENT_ARRAY_BUFFER, buffer.index_buffer().sub_array(0, indices_written));
+      ready_bo(return_value.m_header_bo, GL_ARRAY_BUFFER, buffer.header_buffer().sub_array(0, attributes_written));
+      if (m_data_store_backing == glsl::PainterShaderRegistrarGLSL::data_store_tbo)
+        {
+	  fastuidraw_glActiveTexture(GL_TEXTURE0 + return_value.m_data_store_binding_point);
+	  fastuidraw_glBindTexture(GL_TEXTURE_BUFFER, return_value.m_data_tbo);
+	  tex_buffer(m_tex_buffer_support, GL_TEXTURE_BUFFER, GL_RGBA32UI, return_value.m_data_bo);
+        }
+
       m_free_vaos[m_current_pool].pop_back();
     }
 
@@ -185,6 +192,35 @@ release_vao(painter_vao &V)
   m_free_vaos[V.m_pool].push_back(V);
 }
 
+void
+fastuidraw::gl::detail::painter_vao_pool::
+release_vao_buffer(reference_counted_ptr<painter_vao_buffers> buffer)
+{
+  m_free_buffers.push_back(buffer);
+}
+
+fastuidraw::reference_counted_ptr<fastuidraw::gl::detail::painter_vao_buffers>
+fastuidraw::gl::detail::painter_vao_pool::
+request_vao_buffers(void)
+{
+  reference_counted_ptr<painter_vao_buffers> return_value;
+
+  if (m_free_buffers.empty())
+    {
+      return_value = FASTUIDRAWnew painter_vao_buffers();
+      return_value->m_index_buffer.resize(m_num_indices);
+      return_value->m_attribute_buffer.resize(m_num_attributes);
+      return_value->m_header_buffer.resize(m_num_attributes);
+      return_value->m_data_buffer.resize(m_num_data);
+    }
+  else
+    {
+      return_value = m_free_buffers.back();
+      m_free_buffers.pop_back();
+    }
+  return return_value;
+}
+
 GLuint
 fastuidraw::gl::detail::painter_vao_pool::
 generate_tbo(GLuint src_buffer, GLenum fmt, unsigned int unit)
@@ -203,12 +239,12 @@ generate_tbo(GLuint src_buffer, GLenum fmt, unsigned int unit)
 
 GLuint
 fastuidraw::gl::detail::painter_vao_pool::
-generate_bo(GLenum bind_target, GLsizei psize)
+generate_bo(GLenum bind_target, GLsizei psize, const void *pdata)
 {
   GLuint return_value(0);
   fastuidraw_glGenBuffers(1, &return_value);
   FASTUIDRAWassert(return_value != 0);
   fastuidraw_glBindBuffer(bind_target, return_value);
-  fastuidraw_glBufferData(bind_target, psize, nullptr, GL_STREAM_DRAW);
+  fastuidraw_glBufferData(bind_target, psize, pdata, GL_STREAM_DRAW);
   return return_value;
 }
