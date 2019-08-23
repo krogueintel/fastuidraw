@@ -20,6 +20,7 @@ public:
     m_draw_text(true),
     m_draw_image(true),
     m_rotating(false),
+    m_draw_transparent(false),
     m_pause(false)
   {
     m_path_paint.setStyle(SkPaint::kStroke_Style);
@@ -36,6 +37,7 @@ public:
   SkPath m_path;
   SkPaint m_path_paint;
   bool m_pause;
+  bool m_draw_transparent;
   int m_cells_drawn;
 };
 

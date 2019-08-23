@@ -426,13 +426,13 @@ derived_init(int w, int h)
       m_zoomer.transformation(tr2 * tr1);
     }
 
-  m_text_brush.setTextSize(m_fps_pixel_size.value());
-  m_text_brush.setColor(SkColorSetARGB(255, 0, 255, 255));
-  m_text_brush.setFlags(SkPaint::kAntiAlias_Flag | SkPaint::kSubpixelText_Flag);
+  //m_text_brush.setTextSize(m_fps_pixel_size.value());
+  //m_text_brush.setColor(SkColorSetARGB(255, 0, 255, 255));
+  //m_text_brush.setFlags(SkPaint::kAntiAlias_Flag | SkPaint::kSubpixelText_Flag);
   if(m_table_params.m_font.get() != NULL)
     {
       SkString familyName;
-      m_text_brush.setTypeface(m_table_params.m_font);
+      //m_text_brush.setTypeface(m_table_params.m_font);
       m_table_params.m_font->getFamilyName(&familyName);
 
       std::cout << "Loaded font from \""
@@ -549,19 +549,22 @@ draw_frame(void)
        ostr << "FPS = " << static_cast<int>(1000.0f / static_cast<float>(ms));
        str = ostr.str();
        c_str = str.c_str();
-       painter->drawText(c_str, strlen(c_str), 0, m_text_brush.getFontSpacing(), m_text_brush);
+       std::cout << c_str << "\n";
+       //painter->drawText(c_str, strlen(c_str), 0, m_text_brush.getFontSpacing(), m_text_brush);
 
        ostr.str("");
        ostr << " ms = " << ms;
        str = ostr.str();
        c_str = str.c_str();
-       painter->drawText(c_str, strlen(c_str), 0, 2 * m_text_brush.getFontSpacing(), m_text_brush);
+       std::cout << c_str << "\n";
+       //painter->drawText(c_str, strlen(c_str), 0, 2 * m_text_brush.getFontSpacing(), m_text_brush);
 
        ostr.str("");
        ostr << "Drew " << m_cell_shared_state.m_cells_drawn << " cells";
        str = ostr.str();
        c_str = str.c_str();
-       painter->drawText(c_str, strlen(c_str), 0, 3 * m_text_brush.getFontSpacing(), m_text_brush);
+       std::cout << c_str << "\n";
+       //painter->drawText(c_str, strlen(c_str), 0, 3 * m_text_brush.getFontSpacing(), m_text_brush);
      }
 
   painter->flush();
@@ -626,6 +629,10 @@ handle_event(const SDL_Event &ev)
         case SDLK_0:
           m_zoomer.transformation(ScaleTranslate());
           break;
+	case SDLK_y:
+	  m_cell_shared_state.m_draw_transparent = !m_cell_shared_state.m_draw_transparent;
+	  std::cout << "Draw Transparent = " << m_cell_shared_state.m_draw_transparent << "\n";
+	  break;
         }
       break;
     }

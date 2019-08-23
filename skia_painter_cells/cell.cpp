@@ -59,7 +59,7 @@ Cell(PainterWidget *p, const CellParams &params):
   while(getline(istr, line))
     {
       m_text.push_back(pos_text_t(h, line));
-      h += m_text_brush.getFontSpacing();
+      //h += m_text_brush.getFontSpacing();
     }
 
   m_dimensions = params.m_size;
@@ -141,6 +141,12 @@ paint_pre_children(SkCanvas *painter)
 {
   painter->save();
 
+  if (m_shared_state->m_draw_transparent)
+    {
+      SkRect tmp(SkRect::MakeSize(m_dimensions));
+      painter->saveLayerAlpha(&tmp, 127);
+    }
+
   //draw background
   painter->drawRect(SkRect::MakeSize(m_dimensions), m_background_brush);
 
@@ -177,7 +183,7 @@ paint_pre_children(SkCanvas *painter)
         {
           const char *txt;
           txt = m_text[i].second.c_str();
-          painter->drawText(txt, strlen(txt), SkScalar(0), m_text[i].first, m_text_brush);
+          //painter->drawText(txt, strlen(txt), SkScalar(0), m_text[i].first, m_text_brush);
         }
     }
 
@@ -188,4 +194,9 @@ paint_pre_children(SkCanvas *painter)
       painter->drawPath(m_shared_state->m_path, m_shared_state->m_path_paint);
     }
   m_shared_state->m_cells_drawn++;
+
+  if (m_shared_state->m_draw_transparent)
+    {
+      painter->restore();
+    }
 }
