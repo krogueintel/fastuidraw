@@ -10,22 +10,23 @@
 # Then set SKIA_DIR to where the skia repo is located.
 #
 # Tested against 01979132133e474427a5e615cb05d9e203ae676e
-CXX ?= c++
-SKIA_DIR ?= /home/kevin/github/skia.fastuidraw
+CXX=clang++
+SKIA_DIR ?= /home/kevin/github/skia
 
 SOURCES = sdl_demo.cpp sdl_skia_demo.cpp main.cpp generic_command_line.cpp \
 	PainterWidget.cpp PanZoomTracker.cpp cell.cpp random.cpp table.cpp \
 	cell_group.cpp ImageLoader.cpp
 
-
 RELEASE_OBJS = $(patsubst %.cpp, release/%.o, $(SOURCES))
+RELEASE_DEPS = $(patsubst %.cpp, release/%.d, $(SOURCES))
 DEBUG_OBJS = $(patsubst %.cpp, debug/%.o, $(SOURCES))
+DEBUG_DEPS = $(patsubst %.cpp, debug/%.d, $(SOURCES))
 
 SKIA_BUILD_DIR = $(SKIA_DIR)/out/Shared
 
-INCLUDES = -I$(SKIA_DIR)/include/gpu -I$(SKIA_DIR)/include/c -I$(SKIA_DIR)/include/config -I$(SKIA_DIR)/include/core -I$(SKIA_DIR)/include/pathops -I$(SKIA_DIR)/include/pipe -I$(SKIA_DIR)/include/codec -I$(SKIA_DIR)/include/effects -I$(SKIA_DIR)/include/images -I$(SKIA_DIR)/include/ports -I$(SKIA_DIR)/src/sfnt -I$(SKIA_DIR)/include/utils -I$(SKIA_DIR)/src/utils -I$(SKIA_DIR)/include/views -I$(SKIA_DIR)/include/xml
+INCLUDES = -I$(SKIA_DIR)/include/gpu -I$(SKIA_DIR)/include/c -I$(SKIA_DIR)/include/config -I$(SKIA_DIR)/include/core -I$(SKIA_DIR)/include/pathops -I$(SKIA_DIR)/include/pipe -I$(SKIA_DIR)/include/codec -I$(SKIA_DIR)/include/effects -I$(SKIA_DIR)/include/images -I$(SKIA_DIR)/include/ports -I$(SKIA_DIR)/src/sfnt -I$(SKIA_DIR)/include/utils -I$(SKIA_DIR)/src/utils -I$(SKIA_DIR)/include/views -I$(SKIA_DIR)/include/xml -I$(SKIA_DIR)
 
-COMMON_FLAGS = -std=c++11 `sdl2-config --cflags` -DGL_GLEXT_PROTOTYPES -fno-exceptions
+COMMON_FLAGS = -std=c++14 `sdl2-config --cflags` -DGL_GLEXT_PROTOTYPES -fno-exceptions
 
 DEBUG_FLAGS = $(COMMON_FLAGS)  -g $(INCLUDES)
 RELEASE_FLAGS = -DNDEBUG $(COMMON_FLAGS) $(INCLUDES) -O3
@@ -43,11 +44,18 @@ skia-painter-cells-debug: $(DEBUG_OBJS)
 
 release/%.o: %.cpp
 	@mkdir -p release
-	$(CXX) $(RELEASE_FLAGS) -c $< -o $@
+	$(CXX) $(RELEASE_FLAGS) -MT $@ -MMD -MP -MF release/$*.d -c $< -o $@
+release/%.d: ;
+.PRECIOUS: release/%.d
 
 debug/%.o: %.cpp
 	@mkdir -p debug
-	$(CXX) $(DEBUG_FLAGS) -c $< -o $@
+	$(CXX) $(DEBUG_FLAGS) -MT $@ -MMD -MP -MF debug/$*.d -c $< -o $@
+debug/%.d: ;
+.PRECIOUS: debug/%.d
+
+-include $(RELEASE_DEPS)
+-include $(DEBUG_DEPS)
 
 clean:
 	-rm -f release/*.o debug/*.o
