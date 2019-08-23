@@ -87,8 +87,8 @@ paint(const fastuidraw::reference_counted_ptr<fastuidraw::Painter> &painter)
 
       if (m_draw_transparent)
         {
-          painter->begin_layer(0.5f);
           painter->clip_in_rect(fastuidraw::Rect().size(m_dimensions));
+          painter->begin_layer(0.5f);
         }
 
       painter->save();
