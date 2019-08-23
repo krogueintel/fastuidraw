@@ -4,7 +4,7 @@
  *
  * Copyright 2017 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_FREETYPE_FACE_HPP
+#define FASTUIDRAW_FREETYPE_FACE_HPP
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -28,7 +29,7 @@
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
   /*!\brief
@@ -42,14 +43,14 @@ namespace fastuidraw
    * - If an FT_Face is accessed from multiple threads, the FT_Face
    *   (but not the FT_Library) needs to be mutex locked
    */
-  class FreeTypeFace:public reference_counted<FreeTypeFace>::default_base
+  class FreeTypeFace:public reference_counted<FreeTypeFace>::concurrent
   {
   public:
     /*!\brief
      * A Generator provides an interface to create FreeTypeFace
      * objects.
      */
-    class GeneratorBase:public reference_counted<GeneratorBase>::default_base
+    class GeneratorBase:public reference_counted<GeneratorBase>::concurrent
     {
     public:
       virtual
@@ -79,7 +80,7 @@ namespace fastuidraw
        */
       enum return_code
       check_creation(reference_counted_ptr<FreeTypeLib> lib
-                  = reference_counted_ptr<FreeTypeLib>()) const;
+                     = reference_counted_ptr<FreeTypeLib>()) const;
 
     protected:
       /*!
@@ -127,10 +128,10 @@ namespace fastuidraw
     {
     public:
       /*!
-       *        Ctor.
-       *        \param src holder of data; modifying the data after creating
-       *                   a GeneratorMemory that uses it is undefined and
-       *                   crashing behavior.
+       * Ctor.
+       * \param src holder of data; modifying the data after creating
+       *            a GeneratorMemory that uses it is undefined and
+       *            crashing behavior.
        * \param face_index face index of data
        */
       GeneratorMemory(const reference_counted_ptr<const DataBufferBase> &src,
@@ -138,7 +139,7 @@ namespace fastuidraw
 
       /*!
        * Ctor. Provided as a convenience, a DataBuffer object is created
-       *        from the named file and used as the memory source.
+       * from the named file and used as the memory source.
        * \param filename name of file from which to source the created
        *                 FT_Face objects
        * \param face_index face index of file
@@ -207,3 +208,5 @@ namespace fastuidraw
   };
 /*! @} */
 }
+
+#endif

@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,7 +12,7 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
@@ -21,12 +21,13 @@
 #include <vector>
 #include <string>
 #include <mutex>
+#include <cstring>
 
 #include <fastuidraw/util/util.hpp>
 #include <fastuidraw/util/reference_counted.hpp>
 #include <fastuidraw/util/static_resource.hpp>
 
-#include "../private/util_private.hpp"
+#include <private/util_private.hpp>
 
 namespace
 {
@@ -56,6 +57,18 @@ generate_static_resource(c_string presource_label, c_array<const uint8_t> pvalue
   FASTUIDRAWassert(hoard().m_data.find(sresource_label) == hoard().m_data.end());
   hoard().m_data[sresource_label].swap(svalue);
   hoard().m_mutex.unlock();
+}
+
+void
+fastuidraw::
+generate_static_resource(c_string presource_label, c_string pvalue)
+{
+  const uint8_t *p;
+
+  FASTUIDRAWassert(pvalue);
+  p = reinterpret_cast<const uint8_t*>(pvalue);
+  generate_static_resource(presource_label,
+                           c_array<const uint8_t>(p, std::strlen(pvalue) + 1));
 }
 
 fastuidraw::c_array<const uint8_t>

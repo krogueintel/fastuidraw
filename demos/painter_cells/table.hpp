@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FASTUIDRAW_DEMO_TABLE_HPP
+#define FASTUIDRAW_DEMO_TABLE_HPP
 
 #include <fastuidraw/text/font_database.hpp>
 #include <fastuidraw/text/glyph_cache.hpp>
@@ -36,8 +37,8 @@ public:
   std::vector<vec4> m_rect_colors;
   std::vector<std::string> m_texts;
   std::vector<named_image> m_images;
-  enum PainterBrush::image_filter m_image_filter;
-  unsigned int m_image_mipmap_level;
+  enum PainterImageBrushShader::filter_t m_image_filter;
+  enum PainterImageBrushShader::mipmap_t m_image_mipmapping;
   vec2 m_min_speed, m_max_speed;
   float m_min_degrees_per_s, m_max_degrees_per_s;
   CellSharedState *m_cell_state;
@@ -74,18 +75,20 @@ private:
                              CellGroup *parent, int &J,
                              const ivec2 &xy,
                              int count_x, int count_y,
-                             std::vector<PainterPackedValue<PainterBrush> > &txt,
-                             std::vector<PainterPackedValue<PainterBrush> > &bg,
-                             std::vector<PainterPackedValue<PainterBrush> > &im);
+                             std::vector<PainterData::brush_value > &txt,
+                             std::vector<PainterData::brush_value > &bg,
+                             std::vector<PainterData::brush_value > &im);
 
   TableParams m_params;
   vec2 m_cell_sz;
   bool m_first_draw;
   PainterAttributeData m_lines;
-  PainterPackedValue<PainterBrush> m_line_brush;
-  Path m_grid_path, m_outline_path;
+  PainterData::brush_value m_line_brush;
+  Path m_grid_path;
 
   simple_time m_time;
   int m_thousandths_degrees_rotation;
   float m_rotation_radians;
 };
+
+#endif

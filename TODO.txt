@@ -3,11 +3,14 @@ TODO.
  1. The shader code for computing dash pattern inclusiveness can be improved.
     The shader does a simple linear search. It would be better to do a
     hierarchical search, the issue is to make it nice packing for 4 x 32-bit
-    wide elements of the data store.
+    wide elements of the data store. Alternatively, we could instead use
+    the PainterAttributeWriter interface to generate the attribute/index
+    data from the dash pattern.
 
  2. It is potentially dubious to use texture lookup always for colorstops.
-    The issue is that hard color stops are not representable exaclty with
-    texture lookup.
+    The issue is that hard color stops are not representable exactly with
+    texture lookup. The natural way out if to have a hierarchical search
+    instead.
 
  3. Add arc methods that are same as that of W3C canvas:
     - Add ctor for PathContour::arc(vec2 center, float radius,
@@ -29,28 +32,28 @@ TODO.
        point to the start of A, then A, and then from
        end point of A to pt2.
 
- 4. Add ellipse methods to Path. We need to consider carefully
-    the best way to approximate ellipses with arcs of a circle.
-    We cannot take the line of deforming an arc to an ellipse
-    because the stroking radius cannot be deformed.
+ 4. Add ellipse methods to Path. The ellipse interpolator would
+    derived from interpolator_generic.
 
  5. Add method to stroke RoundedRect that would not reconstruct
-    a new path each time.
+    a new path each time. Them main issue in joining is that the
+    cap-ends of each of the sub-paths (the four rounded corners
+    for example) need to be pixel-tight and NOT anti-aliased.
 
  6. Add methods to fill-and-stroke to Painter where the fill
     obscures the stroke.
 
  7. An interface to perform text layout. Currently an application needs to do
     this by itself, the example code being in demos/common/text_helper.[ch]pp.
-    Likely the best solution is a seperate library that integrates Harfbuzz.
+    Likely the best solution is a separate library that integrates Harfbuzz.
 
  8. Consider implementing multi-channel distance field as seen in
     https://github.com/Chlumsky/msdfgen. The thesis on it is at
     https://dspace.cvut.cz/bitstream/handle/10467/62770/F8-DP-2015-Chlumsky-Viktor-thesis.pdf;
-    an article is also avalaible at https://onlinelibrary.wiley.com/doi/abs/10.1111/cgf.13265.
+    an article is also available at https://onlinelibrary.wiley.com/doi/abs/10.1111/cgf.13265.
     Changes we will need to introduce is to change the distance computation
     to the L1-metric (which makes distance computation fast) and that
-    may have additional ramitifications in general.
+    may have additional ramifications in general.
 
  9. Vulkan backend. Reuse the GLSL code building of fastuidraw::glsl
     together with a 3rd party library to create SPIR-V from GLSL.
@@ -64,7 +67,7 @@ TODO.
     of base classes are defined in files without the _base suffix, for example
     FontBase is defined in font.hpp.
 
-11. GlyphSelector is a -very- poor man's method of selecting glyphs and
+11. FontDatabase is a -very- poor man's method of selecting glyphs and
     performing font merging. It can be argued that it has no real place
     in FastUIDraw since FastUIDraw is just for drawing.
 
@@ -75,3 +78,32 @@ TODO.
     have a concept of "GL context worker" where functors are added to
     the worker and the worker runs these functors "whenever it gets a
     chance" to do so within a GL context.
+
+13. Painter effects interface where similar to begin_layer() for transparency,
+    we allow for the rect passed to go through a sequence of effects.
+    sequence will be a unique painter-brush shader.
+
+14. Possibly: clip_in, clip_out by convex polygon.
+
+15. Anti-alias clipping. The basic idea is to have an additional buffer that holds
+    the anti-aliasing coverage to apply along edges. Path renderers will draw to this
+    buffer to give anti-alias clip-out (and this clip-in) and clip_in_rect will draw
+    the rect edges as well.
+
+16. Possibly: replace if/else linear chain in uber-shader to log2 nested if-else chain.
+    Not 100% clear if the nested would actually be faster or not.
+
+17. Implement clip_out/clip_in by image alpha. One way to achieve this is to start a
+    transparency layer and at the end of the layer, use the Porter-Duff mode DST_OVER,
+    that would then mask out the image buffer (this is for clip-out). For clip-in,
+    SRC_OVER would work.
+
+18. Add to Path interface ability to mark an edge of the path as do not anti-alias edge.
+
+19. Add to Path interface ability to mark a contours caps as to NOT be anti-aliased. The
+    purpose is for merging multiple paths into a single path for stroking (the big use
+    case being stroking a rounded rect).
+
+20. Consider changing each utilitization of std:: containers to pass an allocator
+    that uses fastuidraw::memory::malloc_implement() and friends so that changing
+    the memory allocator globally in a build of FastUIDraw is possible.

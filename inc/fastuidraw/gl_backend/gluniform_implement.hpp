@@ -15,12 +15,13 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_GLUNIFORM_IMPLEMENT_HPP
+#define FASTUIDRAW_GLUNIFORM_IMPLEMENT_HPP
 
 #include <fastuidraw/gl_backend/gl_header.hpp>
 
@@ -180,3 +181,5 @@ MACRO_IMPLEMENT_GL_UNIFORM_MATRIX_IMPL(f, GLfloat)
 
 }
 }
+
+#endif

@@ -1,11 +1,12 @@
-#pragma once
+#ifndef FASTUIDRAW_DEMO_STREAM_HOLDER_HPP
+#define FASTUIDRAW_DEMO_STREAM_HOLDER_HPP
 
 #include <ostream>
 #include <string>
 #include <fastuidraw/util/reference_counted.hpp>
 
 class StreamHolder:
-  public fastuidraw::reference_counted<StreamHolder>::default_base
+  public fastuidraw::reference_counted<StreamHolder>::concurrent
 {
 public:
   StreamHolder(const std::string &filename);
@@ -20,3 +21,5 @@ private:
   std::ostream *m_stream;
   bool m_delete_stream;
 };
+
+#endif

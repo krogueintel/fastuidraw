@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,31 +12,29 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
-
+#ifdef FASTUIDRAW_RENDER_TO_COLOR_BUFFER
 vec4
+#else
+float
+#endif
 fastuidraw_gl_frag_main(in uint sub_shader,
-                        in uint shader_data_offset)
+                        inout uint shader_data_block)
 {
-  if (sub_shader == fastuidraw_aa_fuzz_hq_pass2)
+  #if defined(FASTUIDRAW_RENDER_TO_COLOR_BUFFER) && defined(FASTUIDRAW_STROKING_USE_DEFFERRED_COVERAGE)
     {
-      return vec4(1.0, 1.0, 1.0, fastuidraw_clear_auxiliary());
+      return vec4(fastuidraw_read_deferred_coverage_buffer);
     }
-  else
+  #elif defined(FASTUIDRAW_STROKING_USE_DEFFERRED_COVERAGE)
     {
       float dd, q, alpha;
+
       q = 1.0 - fastuidraw_aa_fuzz;
       dd = max(q, fwidth(q));
       alpha = q / dd;
-
-      if (sub_shader == fastuidraw_aa_fuzz_hq_pass1)
-        {
-          fastuidraw_max_auxiliary(alpha);
-          alpha = 0.0;
-        }
-
-      return vec4(1.0, 1.0, 1.0, alpha);
+      return alpha;
     }
+  #endif
 }

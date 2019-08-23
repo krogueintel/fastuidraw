@@ -13,7 +13,7 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  */
 
 
@@ -660,6 +660,7 @@ namespace
     GLuint m_name;
     GLenum m_shader_type;
     std::string m_compile_log;
+    bool m_compile_success;
   };
 
   class ProgramPrivate
@@ -2609,6 +2610,7 @@ clear_shaders_and_save_shader_data(void)
       m_shader_data[i].m_name = m_shaders[i]->name();
       m_shader_data[i].m_shader_type = m_shaders[i]->shader_type();
       m_shader_data[i].m_compile_log = m_shaders[i]->compile_log();
+      m_shader_data[i].m_compile_success = m_shaders[i]->compile_success();
       m_shader_data_sorted_by_type[m_shader_data[i].m_shader_type].push_back(i);
       fastuidraw_glDetachShader(m_name, m_shaders[i]->name());
     }
@@ -3226,6 +3228,25 @@ num_shaders(GLenum tp) const
     iter->second.size() : 0;
 }
 
+bool
+fastuidraw::gl::Program::
+shader_compile_success(GLenum tp, unsigned int i) const
+{
+  ProgramPrivate *d;
+  d = static_cast<ProgramPrivate*>(m_d);
+
+  std::map<GLenum, std::vector<int> >::const_iterator iter;
+  iter = d->m_shader_data_sorted_by_type.find(tp);
+  if (iter != d->m_shader_data_sorted_by_type.end() && i < iter->second.size())
+    {
+      return d->m_shader_data[iter->second[i]].m_compile_success;
+    }
+  else
+    {
+      return false;
+    }
+}
+
 fastuidraw::c_string
 fastuidraw::gl::Program::
 shader_src_code(GLenum tp, unsigned int i) const
@@ -3458,26 +3479,45 @@ perform_initialization(Program *pr, bool program_bound) const
   d = static_cast<std::string*>(m_d);
   FASTUIDRAWassert(d != nullptr);
 
-  int loc;
-  loc = pr->uniform_location(d->c_str());
-  if (loc == -1)
-    {
-      loc = fastuidraw_glGetUniformLocation(pr->name(), d->c_str());
-      if (loc != -1)
-        {
-          std::cerr << "gl_program::uniform_location failed to find uniform, \""
-                    << *d << "\"but glGetUniformLocation succeeded\n";
-        }
-    }
+  Program::shader_variable_info S;
+  unsigned int array_index(0);
 
-  if (loc != -1)
+  S = pr->default_uniform_block().variable(d->c_str(), &array_index);
+  if (S)
     {
-      init_uniform(pr->name(), loc, program_bound);
+      init_uniform(pr->name(), S, array_index, program_bound);
     }
   else
     {
-      std::cerr << "Failed to find uniform \"" << *d
-                << "\" in program " << pr->name()
-                << " for initialization\n";
+      #ifdef FASTUIDRAW_DEBUG
+        {
+          std::cerr << "Failed to find uniform \"" << *d
+                    << "\" in program " << pr->name()
+                    << " for initialization\n";
+        }
+      #endif
+    }
+}
+
+/////////////////////////////////////
+// SamplerInitializer methods
+void
+fastuidraw::gl::SamplerInitializer::
+init_uniform(GLuint program, Program::shader_variable_info info,
+             unsigned int array_index, bool program_bound) const
+{
+  /* NOTE: the type needs to be an int for v so that glProgramUniformi
+   * or glUniformi are called and NOT glProgramUniformui or glUniformui.
+   */
+  for (int endc = info.count(), v = m_value, a = array_index; a < endc; ++a, ++v)
+    {
+      if (program_bound)
+      {
+        Uniform(info.location(a), v);
+      }
+    else
+      {
+        ProgramUniform(program, info.location(a), v);
+      }
     }
 }

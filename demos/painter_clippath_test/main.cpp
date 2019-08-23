@@ -30,6 +30,38 @@ public:
   command_line_argument_value<float> m_x, m_y;
 };
 
+#ifndef FASTUIDRAW_GL_USE_GLES
+
+class EnableWireFrameAction:public PainterDrawBreakAction
+{
+public:
+  explicit
+  EnableWireFrameAction(bool b):
+    m_lines(b)
+  {}
+
+  virtual
+  fastuidraw::gpu_dirty_state
+  execute(PainterBackend*) const
+  {
+    if (m_lines)
+      {
+        fastuidraw_glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        fastuidraw_glLineWidth(4.0);
+      }
+    else
+      {
+        fastuidraw_glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+      }
+    return 0u;
+  }
+
+private:
+  bool m_lines;
+};
+
+#endif
+
 class painter_clip_test:public sdl_painter_demo
 {
 public:
@@ -75,17 +107,6 @@ private:
       number_combine_clip_modes
     };
 
-  enum anti_alias_mode_t
-    {
-      no_anti_alias,
-      by_anti_alias_auto,
-      by_anti_alias_simple,
-      by_anti_alias_hq,
-      by_anti_alias_fastest,
-
-      number_anti_alias_modes
-    };
-
   class Transformer
   {
   public:
@@ -97,7 +118,7 @@ private:
     void
     concat_to_painter(const reference_counted_ptr<Painter> &ref) const
     {
-      const float conv(M_PI / 180.0f);
+      const float conv(FASTUIDRAW_PI / 180.0f);
       m_zoomer.transformation().concat_to_painter(ref);
       ref->shear(m_shear.x(), m_shear.y());
       ref->rotate(m_angle * conv);
@@ -109,13 +130,13 @@ private:
   };
 
   void
-  draw_element(const Path &path, unsigned int clip_mode, const vec4 &pen_color,
+  draw_element(const Path &path, unsigned int clip_mode, const vec4 &color,
                const Transformer &matrix);
 
   void
   draw_combined(const Path &path1, unsigned int clip_mode1, const Transformer &matrix1,
                 const Path &path2, unsigned int clip_mode2, const Transformer &matrix2,
-                const vec4 &pen_color);
+                const vec4 &color);
 
   enum return_code
   load_path(Path &out_path, const std::string &file);
@@ -128,6 +149,7 @@ private:
 
   command_line_argument_value<std::string> m_path1_file;
   command_line_argument_value<std::string> m_path2_file;
+  command_line_argument_value<std::string> m_image_file;
   command_line_argument_value<float> m_rect_width;
   command_line_argument_value<float> m_rect_height;
   rounded_corner_radii m_rect_minx_miny_radii;
@@ -137,18 +159,19 @@ private:
 
   Path m_path1, m_path2;
   RoundedRect m_rect;
+  reference_counted_ptr<const Image> m_image;
 
   unsigned int m_path1_clip_mode, m_path2_clip_mode;
   unsigned int m_combine_clip_mode, m_rounded_rect_mode;
   unsigned int m_active_transformer;
-  unsigned int m_aa_mode;
+  bool m_aa_mode;
+  bool m_show_wire_frame;
   vecN<Transformer, number_transformers> m_transformers;
   vecN<std::string, number_clip_modes> m_clip_labels;
   vecN<std::string, number_transformers> m_transformer_labels;
   vecN<std::string, number_combine_clip_modes> m_combine_clip_labels;
-  vecN<std::string, number_anti_alias_modes> m_anti_alias_mode_labels;
-  vecN<enum Painter::shader_anti_alias_t, number_anti_alias_modes> m_shader_anti_alias_mode_values;
   simple_time m_draw_timer;
+  int m_show_surface, m_last_shown_surface;
 };
 
 painter_clip_test::
@@ -161,6 +184,7 @@ painter_clip_test():
               "if non-empty read the geometry of the path1 from the specified file, "
               "otherwise use a default path",
                *this),
+  m_image_file("", "image", "if a valid file name, apply an image to drawing the rounded rect", *this),
   m_rect_width(100.0f, "rect_width", "Rounded rectangle width", *this),
   m_rect_height(50.0f, "rect_height", "Rounded rectangle height", *this),
   m_rect_minx_miny_radii("minx-miny", *this),
@@ -172,7 +196,10 @@ painter_clip_test():
   m_combine_clip_mode(separate_clipping),
   m_rounded_rect_mode(no_clip),
   m_active_transformer(view_transformer),
-  m_aa_mode(by_anti_alias_auto)
+  m_aa_mode(true),
+  m_show_wire_frame(false),
+  m_show_surface(0),
+  m_last_shown_surface(0)
 {
   std::cout << "Controls:\n"
             << "\t1: cycle through clip modes for path1\n"
@@ -186,6 +213,12 @@ painter_clip_test():
             << "\t0: Rotate left\n"
             << "\t9: Rotate right\n";
 
+  #ifndef FASTUIDRAW_GL_USE_GLES
+    {
+      std::cout << "\tspace: toggle wire frame on rounded rect\n";
+    }
+  #endif
+
   m_clip_labels[clip_in] = "clip_in";
   m_clip_labels[clip_out] = "clip_out";
   m_clip_labels[no_clip] = "no_clip";
@@ -198,18 +231,6 @@ painter_clip_test():
   m_combine_clip_labels[separate_clipping] = "separate_clipping";
   m_combine_clip_labels[path1_then_path2] = "path1_then_path2";
   m_combine_clip_labels[path2_then_path1] = "path2_then_path1";
-
-  m_anti_alias_mode_labels[no_anti_alias] = "no_anti_alias";
-  m_anti_alias_mode_labels[by_anti_alias_auto] = "by_anti_alias_auto";
-  m_anti_alias_mode_labels[by_anti_alias_simple] = "by_anti_alias_simple";
-  m_anti_alias_mode_labels[by_anti_alias_hq] = "by_anti_alias_hq";
-  m_anti_alias_mode_labels[by_anti_alias_fastest] = "by_anti_alias_fastest";
-
-  m_shader_anti_alias_mode_values[no_anti_alias] = Painter::shader_anti_alias_none;
-  m_shader_anti_alias_mode_values[by_anti_alias_auto] = Painter::shader_anti_alias_auto;
-  m_shader_anti_alias_mode_values[by_anti_alias_simple] = Painter::shader_anti_alias_simple;
-  m_shader_anti_alias_mode_values[by_anti_alias_hq] = Painter::shader_anti_alias_high_quality;
-  m_shader_anti_alias_mode_values[by_anti_alias_fastest] = Painter::shader_anti_alias_fastest;
 }
 
 void
@@ -268,12 +289,24 @@ handle_event(const SDL_Event &ev)
           std::cout << "Rounded rect mode set to: " << m_clip_labels[m_rounded_rect_mode] << "\n";
           break;
         case SDLK_u:
-          cycle_value(m_aa_mode,
-                      ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT),
-                      number_anti_alias_modes);
-          std::cout << "RoundedRect drawing anti-alias mode set to: "
-                    << m_anti_alias_mode_labels[m_aa_mode]
-                    << "\n";
+          m_aa_mode = !m_aa_mode;
+          std::cout << "RoundedRect drawing anti-alias mode set to: " << m_aa_mode << "\n";
+          break;
+        case SDLK_o:
+          if (ev.key.keysym.mod & (KMOD_SHIFT | KMOD_ALT))
+            {
+              if (m_show_surface > 0)
+                {
+                  --m_show_surface;
+                }
+            }
+          else
+            {
+              ++m_show_surface;
+            }
+          break;
+        case SDLK_SPACE:
+          m_show_wire_frame = !m_show_wire_frame;
           break;
         }
       break;
@@ -387,6 +420,21 @@ derived_init(int, int)
 {
   make_paths();
 
+  if (!m_image_file.value().empty())
+    {
+      ImageLoader image_data(m_image_file.value());
+      m_image = m_painter->image_atlas().create(image_data.width(),
+                                                image_data.height(),
+                                                image_data,
+                                                Image::bindless_texture2d);
+      if (m_image)
+        {
+          std::cout << "Loaded image \"" << m_image_file.value()
+                    << "\", dimensions = " << m_image->dimensions()
+                    << "\n";
+        }
+    }
+
   m_rect.m_min_point = vec2(0.0f, 0.0f);
   m_rect.m_max_point = vec2(m_rect_width.value(), m_rect_height.value());
   m_rect.m_corner_radii[Rect::minx_miny_corner] = m_rect_minx_miny_radii.value();
@@ -398,14 +446,14 @@ derived_init(int, int)
 
 void
 painter_clip_test::
-draw_element(const Path &path, unsigned int clip_mode, const vec4 &pen_color,
+draw_element(const Path &path, unsigned int clip_mode, const vec4 &color,
              const Transformer &matrix)
 {
   PainterBrush brush;
 
   m_painter->save();
   matrix.concat_to_painter(m_painter);
-  brush.pen(pen_color);
+  brush.color(color);
   switch(clip_mode)
     {
     default:
@@ -419,15 +467,7 @@ draw_element(const Path &path, unsigned int clip_mode, const vec4 &pen_color,
       break;
     }
 
-  vec2 p0, p1, sz;
-  p0 = path.tessellation()->bounding_box_min();
-  p1 = path.tessellation()->bounding_box_max();
-
-  m_painter->fill_rect(PainterData(&brush),
-                       Rect()
-                       .min_point(p0)
-                       .max_point(p1));
-
+  m_painter->fill_rect(PainterData(&brush), path.tessellation().bounding_box());
   m_painter->restore();
 }
 
@@ -435,12 +475,12 @@ void
 painter_clip_test::
 draw_combined(const Path &path1, unsigned int clip_mode1, const Transformer &matrix1,
               const Path &path2, unsigned int clip_mode2, const Transformer &matrix2,
-              const vec4 &pen_color)
+              const vec4 &color)
 {
   float3x3 M(m_painter->transformation());
   PainterBrush brush;
 
-  brush.pen(pen_color);
+  brush.color(color);
   m_painter->save();
   matrix1.concat_to_painter(m_painter);
   switch (clip_mode1)
@@ -472,14 +512,7 @@ draw_combined(const Path &path1, unsigned int clip_mode1, const Transformer &mat
   m_painter->transformation(M);
   matrix1.concat_to_painter(m_painter);
 
-  vec2 p0, p1, sz;
-  p0 = path1.tessellation()->bounding_box_min();
-  p1 = path1.tessellation()->bounding_box_max();
-
-  m_painter->fill_rect(PainterData(&brush),
-                       Rect()
-                       .min_point(p0)
-                       .max_point(p1));
+  m_painter->fill_rect(PainterData(&brush), path1.tessellation().bounding_box());
   m_painter->restore();
 }
 
@@ -498,10 +531,32 @@ draw_frame(void)
     case no_clip:
       {
         PainterBrush brush;
-        brush.pen(vec4(1.0f, 1.0f, 0.0f, 1.0f));
+
+        if (m_image)
+          {
+            brush.image(m_image);
+          }
+        else
+          {
+            brush.color(vec4(1.0f, 1.0f, 0.0f, 1.0f));
+          }
         m_painter->fill_rounded_rect(m_painter->default_shaders().fill_shader(),
-                                     PainterData(&brush), m_rect,
-                                     m_shader_anti_alias_mode_values[m_aa_mode]);
+                                     PainterData(&brush), m_rect, m_aa_mode);
+
+        #ifndef FASTUIDRAW_GL_USE_GLES
+          {
+            if (m_show_wire_frame)
+              {
+                PainterBrush red;
+
+                red.color(1.0f, 0.0f, 0.0f, 0.25f);
+                m_painter->queue_action(FASTUIDRAWnew EnableWireFrameAction(true));
+                m_painter->fill_rounded_rect(m_painter->default_shaders().fill_shader(),
+                                             PainterData(&red), m_rect, false);
+                m_painter->queue_action(FASTUIDRAWnew EnableWireFrameAction(false));
+              }
+          }
+        #endif
       }
       break;
 
@@ -538,11 +593,45 @@ draw_frame(void)
       break;
     }
 
-  m_painter->end();
+  c_array<const PainterSurface* const> surfaces;
+
+  surfaces = m_painter->end();
   fastuidraw_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
   fastuidraw_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-  m_surface->blit_surface(GL_NEAREST);
 
+  m_show_surface = t_min(m_show_surface, (int)surfaces.size());
+  if (m_show_surface <= 0 || m_show_surface > surfaces.size())
+    {
+      m_surface->blit_surface(GL_NEAREST);
+    }
+  else
+    {
+      const gl::PainterSurfaceGL *S;
+      PainterSurface::Viewport src, dest;
+
+      src = m_surface->viewport();
+      S = dynamic_cast<const gl::PainterSurfaceGL*>(surfaces[m_show_surface - 1]);
+
+      dest.m_origin = src.m_origin;
+      dest.m_dimensions = ivec2(src.m_dimensions.x(), src.m_dimensions.y() / 2);
+      m_surface->blit_surface(src, dest, GL_LINEAR);
+
+      dest.m_origin.y() +=  dest.m_dimensions.y();
+      S->blit_surface(src, dest, GL_LINEAR);
+    }
+
+  if (m_last_shown_surface != m_show_surface)
+    {
+      if (m_show_surface > 0)
+        {
+          std::cout << "Show offscreen surface: " << m_show_surface - 1 << "\n";
+        }
+      else
+        {
+          std::cout << "Don't show offscreen surface\n";
+        }
+      m_last_shown_surface = m_show_surface;
+    }
 }
 
 int

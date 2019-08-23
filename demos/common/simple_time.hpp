@@ -13,13 +13,14 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
 
-#pragma once
+#ifndef FASTUIDRAW_DEMO_SIMPLE_TIME_HPP
+#define FASTUIDRAW_DEMO_SIMPLE_TIME_HPP
 
 #include <chrono>
 #include <stdint.h>
@@ -33,7 +34,7 @@ public:
   }
 
   int32_t
-  elapsed(void)
+  elapsed(void) const
   {
     return time_difference_ms(std::chrono::steady_clock::now(), m_start_time);
   }
@@ -48,7 +49,7 @@ public:
   }
 
   int64_t
-  elapsed_us(void)
+  elapsed_us(void) const
   {
     return time_difference_us(std::chrono::steady_clock::now(), m_start_time);
   }
@@ -82,3 +83,5 @@ private:
 
   std::chrono::time_point<std::chrono::steady_clock> m_start_time;
 };
+
+#endif

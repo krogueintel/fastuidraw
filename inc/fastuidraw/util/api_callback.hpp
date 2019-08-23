@@ -4,7 +4,7 @@
  *
  * Copyright 2017 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,11 +12,12 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-#pragma once
+#ifndef FASTUIDRAW_API_CALLBACK_HPP
+#define FASTUIDRAW_API_CALLBACK_HPP
 
 #include <fastuidraw/util/util.hpp>
 #include <fastuidraw/util/reference_counted.hpp>
@@ -27,7 +28,11 @@ namespace fastuidraw
    * An APICallbackSet represents a collection of functors
    * to be called before and after each function call from
    * a collection of functions. This class is used by the
-   * fastuidraw::gl_binding and fastuidraw::egl_binding.
+   * fastuidraw::gl_binding and can be reused for other
+   * 3D API's (by definding a macro for each 3D API function
+   * that pre-calls to APICallbackSet::pre_call() and post-
+   * calls to APICallbackSet::post_call() around each 3D
+   * API function call.
    */
   class APICallbackSet:fastuidraw::noncopyable
   {
@@ -36,7 +41,7 @@ namespace fastuidraw
      * A Callback is a functor to be called before
      * and after each function.
      */
-    class CallBack:public reference_counted<CallBack>::default_base
+    class CallBack:public reference_counted<CallBack>::concurrent
     {
     public:
       /*!
@@ -210,3 +215,5 @@ namespace fastuidraw
     void *m_d;
   };
 }
+
+#endif

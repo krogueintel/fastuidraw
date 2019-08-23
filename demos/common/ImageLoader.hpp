@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FASTUIDRAW_DEMO_IMAGELOADER_HPP
+#define FASTUIDRAW_DEMO_IMAGELOADER_HPP
 
 #include <SDL_image.h>
 #include <vector>
@@ -6,7 +7,7 @@
 #include <fastuidraw/util/vecN.hpp>
 #include <fastuidraw/image.hpp>
 #include <fastuidraw/gl_backend/ngl_header.hpp>
-#include <fastuidraw/gl_backend/image_gl.hpp>
+#include <fastuidraw/gl_backend/texture_image_gl.hpp>
 
 #include "cast_c_array.hpp"
 
@@ -75,14 +76,8 @@ public:
   explicit
   ImageLoader(const std::string &pfilename, bool flip = false):
     ImageLoaderData(pfilename, flip),
-    fastuidraw::ImageSourceCArray(dimensions(), data())
+    fastuidraw::ImageSourceCArray(dimensions(), data(), fastuidraw::Image::rgba_format)
   {}
 };
 
-fastuidraw::reference_counted_ptr<fastuidraw::gl::ImageAtlasGL::TextureImage>
-create_texture_image(const fastuidraw::reference_counted_ptr<fastuidraw::ImageAtlas> &patlas,
-                     int w, int h, unsigned int m,
-                     const fastuidraw::ImageSourceBase &image,
-                     GLenum min_filter = GL_LINEAR_MIPMAP_LINEAR,
-                     GLenum mag_filter = GL_LINEAR,
-                     bool object_owns_texture = true);
+#endif

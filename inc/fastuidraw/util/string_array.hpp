@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_STRING_ARRAY_HPP
+#define FASTUIDRAW_STRING_ARRAY_HPP
 
 #include <fastuidraw/util/c_array.hpp>
 #include <fastuidraw/util/util.hpp>
@@ -75,6 +76,12 @@ namespace fastuidraw
     resize(unsigned int size, c_string value = "");
 
     /*!
+     * Clears the string_array.
+     */
+    void
+    clear(void);
+
+    /*!
      * Get all elements of the string_array, pointer
      * and pointer contents are valid until the string_array
      * is modified.
@@ -116,3 +123,5 @@ namespace fastuidraw
   };
 }
 /*! @} */
+
+#endif

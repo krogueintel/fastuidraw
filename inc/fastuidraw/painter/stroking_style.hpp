@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_STROKING_STYLE_HPP
+#define FASTUIDRAW_STROKING_STYLE_HPP
 
 #include <fastuidraw/painter/painter_enums.hpp>
 
@@ -75,3 +76,5 @@ namespace fastuidraw
   };
 /*! @} */
 }
+
+#endif

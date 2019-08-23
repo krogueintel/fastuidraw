@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_FREETYPE_LIB_HPP
+#define FASTUIDRAW_FREETYPE_LIB_HPP
 
 
 #include <ft2build.h>
@@ -28,7 +29,7 @@
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
 
@@ -44,7 +45,7 @@ namespace fastuidraw
    * - If an FT_Face is accessed from multiple threads, the FT_Face
    *   (but not the FT_Library) needs to be mutex locked
    */
-  class FreeTypeLib:public reference_counted<FreeTypeLib>::default_base
+  class FreeTypeLib:public reference_counted<FreeTypeLib>::concurrent
   {
   public:
     /*!
@@ -86,3 +87,5 @@ namespace fastuidraw
   };
 /*! @} */
 };
+
+#endif

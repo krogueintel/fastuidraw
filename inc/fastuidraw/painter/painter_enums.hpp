@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,15 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_PAINTER_ENUMS_HPP
+#define FASTUIDRAW_PAINTER_ENUMS_HPP
+
+#include <fastuidraw/util/util.hpp>
 
 namespace fastuidraw
 {
@@ -26,10 +29,153 @@ namespace fastuidraw
  */
 
   /*!
-   * \brief Class to encapsulate enumerations used in Painter
-   *        interface, part of the main library libFastUIDraw.
+   * \brief
+   * Class to contain various enumerations needed for
+   * describing a brush.
    */
-  class PainterEnums
+  class PainterBrushEnums
+  {
+  public:
+    /*!
+     * Enumeration to specify how a value is interpreted
+     * outside of its natural range. For gradients the
+     * range is [0, 1] acting on its interpolate.
+     */
+    enum spread_type_t
+      {
+        /*!
+         * Clamp the value to its range, i.e.
+         * for a value t on a range [A, B] the
+         * value is clamp(r, A, B).
+         */
+        spread_clamp,
+
+        /*!
+         * Mirror the value across the start of
+         * its range, i.e. for a value t on a
+         * range [A, B] the value is
+         * clamp(A + abs(t - A), A, B)
+         */
+        spread_mirror,
+
+        /*!
+         * Repeat the value to its range, i.e.
+         * for a value t on a range [A, B] the
+         * value is A + mod(t - A, B - A)
+         */
+        spread_repeat,
+
+        /*!
+         * Mirror repeat the  value across the start
+         * of its range, i.e. for a value t on a
+         * range [A, B] the value is
+         * B - abs(mod(t - A, 2 * (B - A)) - (B - A))
+         */
+        spread_mirror_repeat,
+
+        number_spread_types
+      };
+
+    /*!
+     * \brief
+     * Enumeration specifying what filter to apply to an image
+     */
+    enum filter_t
+      {
+        /*!
+         * Indicates to use nearest filtering (i.e
+         * choose closest pixel).
+         */
+        filter_nearest = 1,
+
+        /*!
+         * Indicates to use bilinear filtering.
+         */
+        filter_linear = 2,
+
+        /*!
+         * Indicates to use bicubic filtering.
+         */
+        filter_cubic = 3,
+      };
+
+    /*!
+     * enumeration to specify mipmapping on an image
+     */
+    enum mipmap_t
+      {
+        /*!
+         * Indicates to apply mipmap filtering
+         */
+        apply_mipmapping,
+
+        /*!
+         * Indicates to not apply mipmap filtering
+         */
+        dont_apply_mipmapping
+      };
+
+    /*!
+     * enumeration to describe a gradient type.
+     */
+    enum gradient_type_t
+      {
+        /*!
+         * indicates the lack of a gradient.
+         */
+        gradient_non = 0,
+
+        /*!
+         * Indicates a linear gradient; a linear gradient is defined
+         * by two points p0 and p1 where the interpolate at a point p
+         * is the value of dot(p - p0, p1 - p0) / dot(p0 - p1, p0 - p1).
+         */
+        gradient_linear,
+
+        /*!
+         * Indicates a radial gradient; a radial gradient is defined
+         * by two circles C0 = Circle(p0, r0), C1 = Circle(p1, r1)
+         * where the interpolate at a point p is the time t when p
+         * is on the circle C(t) where C(t) = Circle(p(t), r(t)),
+         * p(t) = p0 + (p1 - p0) * t and r(t) = r0 + (r1 - r0) * t.
+         */
+        gradient_radial,
+
+        /*!
+         * Indicates a sweep gradient; a sweep gradient is defined by
+         * a single point C, an angle theta (in radians), a sign S and
+         * a factor F. The angle theta represents at what angle the
+         * gradient starts, the point C is the center point of the
+         * sweep, the sign of S represents the angle orientation and
+         * the factor F reprsents how many times the gradient is to be
+         * repated. Precisely, the interpolate at a point p is defined
+         * as t_interpolate where
+         * \code
+         * vec2 d = p - C;
+         * float theta, v;
+         * theta = S * atan(d.y, d.x);
+         * if (theta < alpha )
+         *   {
+         *    theta  += 2 * PI;
+         *   }
+         * theta -= alpha;
+         * v = (theta - angle) / (2 * PI);
+         * t_interpolate = (S < 0.0) ? F * (1.0 - v) : F * v;
+         * \endcode
+         */
+        gradient_sweep,
+
+        number_gradient_types,
+      };
+  };
+
+  /*!
+   * \brief
+   * Class to encapsulate enumerations used in Painter
+   * interface, part of the main library libFastUIDraw.
+   */
+  class PainterEnums:
+    public PainterBrushEnums
   {
   public:
     /*!
@@ -40,7 +186,9 @@ namespace fastuidraw
     enum screen_orientation
       {
         y_increases_downwards, /*!< y-coordinate increases downwards */
-        y_increases_upwards /*!< y-coordinate increases upwards */
+        y_increases_upwards, /*!< y-coordinate increases upwards */
+
+        number_screen_orientation,
       };
 
     /*!
@@ -50,7 +198,9 @@ namespace fastuidraw
     enum rotation_orientation_t
       {
         clockwise, /*!< indicates clockwise */
-        counter_clockwise /*!< indicates counter-clockwise */
+        counter_clockwise, /*!< indicates counter-clockwise */
+
+        number_rotation_orientation
       };
 
     /*!
@@ -72,7 +222,9 @@ namespace fastuidraw
          * \ref GlyphMetrics::vertical_layout_offset()
          * to offset the glyphs.
          */
-        glyph_layout_vertical
+        glyph_layout_vertical,
+
+        number_glyph_layout
       };
 
     /*!
@@ -143,82 +295,7 @@ namespace fastuidraw
         nonzero_fill_rule, /*!< indicates to use the non-zero fill rule */
         complement_nonzero_fill_rule, /*!< indicates to give the complement of the non-zero fill rule */
 
-        fill_rule_data_count /*!< count of enums */
-      };
-
-    /*!
-     * Enumeration to describe high quality shader
-     * anti-aliasing support in \ref PainterFillShader
-     * and \ref PainterStrokeShader.
-     */
-    enum hq_anti_alias_support_t
-      {
-        /*!
-         * Indicates that high quality anti-aliasing is NOT
-         * supported.
-         */
-        hq_anti_alias_no_support,
-
-        /*!
-         * Indicates that high quality anti-aliasing is
-         * supported with significant performance impact.
-         */
-        hq_anti_alias_slow,
-
-        /*!
-         * Indicates that high quality anti-aliasing is
-         * supported with no or minimal performance impact.
-         */
-        hq_anti_alias_fast,
-      };
-
-    /*!
-     * Enumeration to specify the anti-aliasing quality
-     * to apply when performing path fills or strokes.
-     */
-    enum shader_anti_alias_t
-      {
-        /*!
-         * Do not apply any shader based anti-aliasing
-         * to the fill.
-         */
-        shader_anti_alias_none,
-
-        /*!
-         * Applies simpler anti-aliasing shading to path
-         * fill or stroke. This will potentially give under
-         * coverage to fragments (typically where the path
-         * crosses itself or when the path is filled or
-         * stroke highly minified).
-         */
-        shader_anti_alias_simple,
-
-        /*!
-         * Applies higher quality anti-aliasing shading
-         * that avoids the issues that come from \ref
-         * shader_anti_alias_simple. This option will give
-         * the highest quality anti-aliasing at the
-         * potential cost of performance.
-         */
-        shader_anti_alias_high_quality,
-
-        /* make the modes that indicate for Painter to choose
-         * to come after the modes that precisely specify a
-         * choice.
-         */
-
-        /*!
-         * Represents to use \ref shader_anti_alias_high_quality
-         * if using it does not have a large performance impact
-         * and otherwise to use \ref shader_anti_alias_simple.
-         */
-        shader_anti_alias_auto,
-
-        /*!
-         * Represents to use the fastest anti-alias mode
-         * (which is not shader_anti_alias_none).
-         */
-        shader_anti_alias_fastest,
+        number_fill_rule /*!< count of enums */
       };
 
     /*!
@@ -242,6 +319,11 @@ namespace fastuidraw
          */
         stroking_method_arc,
 
+        /*!
+         *
+         */
+        stroking_method_number_precise_choices,
+
         /* make the modes that indicate to choose to come
          * after the modes that precisely specify a value.
          */
@@ -249,107 +331,502 @@ namespace fastuidraw
         /*!
          * Choose for optimal performance.
          */
-        stroking_method_auto,
-      };
-
-    /*!
-     * \brief
-     * Enumeration specifying composite modes
-     */
-    enum composite_mode_t
-      {
-        composite_porter_duff_clear, /*!< Clear mode of Porter-Duff */
-        composite_porter_duff_src, /*!< Source mode of Porter-Duff */
-        composite_porter_duff_dst, /*!< Destination mode of Porter-Duff */
-        composite_porter_duff_src_over, /*!< Source over mode of Porter-Duff */
-        composite_porter_duff_dst_over, /*!< Destination over mode of Porter-Duff */
-        composite_porter_duff_src_in, /*!< Source In mode of Porter-Duff */
-        composite_porter_duff_dst_in, /*!< Destination In mode of Porter-Duff */
-        composite_porter_duff_src_out, /*!< Source Out mode of Porter-Duff */
-        composite_porter_duff_dst_out, /*!< Destination Out mode of Porter-Duff */
-        composite_porter_duff_src_atop, /*!< Source Atop mode of Porter-Duff */
-        composite_porter_duff_dst_atop, /*!< Destination Atop mode of Porter-Duff */
-        composite_porter_duff_xor, /*!< Xor mode of Porter-Duff */
-      };
-
-    /*!
-     * \brief
-     * Enumeration specifying W3C blending modes
-     */
-    enum blend_w3c_mode_t
-      {
-        blend_w3c_normal, /*!< W3C multiply mode: Src, i.e. no blending operation */
-        blend_w3c_multiply, /*!< W3C multiply mode: Dest * Src */
-        blend_w3c_screen, /*!< W3C screen mode: 1 - (1 - Dest) * (1 - Src) */
+        stroking_method_fastest = stroking_method_number_precise_choices,
 
         /*!
-         * W3C overlay mode: for each channel,
-         * (Dst <= 0.5) ?
-         *    2.0 * Dest * Src :
-         *    1 - 2 * (1 - Dst) * (1 - Src)
+         * Number of stroking enums present.
+         */
+        number_stroking_methods,
+      };
+
+    /*!
+     * \brief
+     * Enumeration specifying blend modes. The following function-formulas
+     * are used in a number of the blend modes:
+     * \code
+     * UndoAlpha(C.rgba) = (0, 0, 0) if Ca = 0
+     *                     C.rgb / C.a otherwise
+     * MinColorChannel(C.rgb) = min(C.r, C.g, C.b)
+     * MaxColorChannel(C.rgb) = max(C.r, C.g, C.b)
+     * Luminosity(C.rgb) = dot(C.rgb, vec3(0.30, 0.59, 0.11))
+     * Saturation(C.rgb) = MaxColorChannel(C.rgb) - MinColorChannel(C.rgb)
+     * \endcode
+     * The next set of functions are a little messier and written in GLSL
+     * \code
+     * vec3 ClipColor(in vec3 C)
+     * {
+     *    float L = Luminosity(C);
+     *    float MinC = MinColorChannel(C);
+     *    float MaxC = MaxColorChannel(C);
+     *    if (MinC < 0.0)
+     *       C = vec3(L) + (C - vec3(L)) * (L / (L - MinC));
+     *    if (MaxC > 1.0)
+     *       C = vec3(L) + (C - vec3(L)) * ((1 - L) / (MaxC - L));
+     *    return C;
+     * }
+     *
+     * vec3 OverrideLuminosity(vec3 C, vec3 L)
+     * {
+     *    float Clum = Luminosity(C);
+     *    float Llum = Luminosity(L);
+     *    float Delta = Llum - Clum;
+     *    return ClipColor(C + vec3(Delta));
+     * }
+     *
+     * vec3 OverrideLuminosityAndSaturation(vec3 C, vec3 S, vec3 L)
+     * {
+     *    float Cmin = MinColorChannel(C);
+     *    float Csat = Saturation(C);
+     *    float Ssat = Saturation(S);
+     *    if (Csat > 0.0)
+     *      {
+     *         C = (C - Cmin) * Ssat / Csat;
+     *      }
+     *    else
+     *      {
+     *         C = vec3(0.0);
+     *      }
+     *    return OverrideLuminosity(C, L);
+     * }
+     * \endcode
+     */
+    enum blend_mode_t
+      {
+        /*!
+         * Porter-Duff clear mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where
+         * F.rgba = (0, 0, 0, 0).
+         */
+        blend_porter_duff_clear,
+
+        /*!
+         * Porter-Duff src mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F = S.
+         */
+        blend_porter_duff_src,
+
+        /*!
+         * Porter-Duff dst mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F = D.
+         */
+        blend_porter_duff_dst,
+
+        /*!
+         * Porter-Duff src-over mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = S.rgb + D.rgb * (1 - S.a)
+         * \endcode
+         */
+        blend_porter_duff_src_over,
+
+        /*!
+         * Porter-Duff dst-over mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = D.a + S.a * (1 - D.a)
+         * F.rgb = D.rgb + S.rgb * (1 - D.a)
+         * \endcode
+         */
+        blend_porter_duff_dst_over,
+
+        /*!
+         * Porter-Duff src-in mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a * D.a
+         * F.rgb = S.rgb * D.a
+         * \endcode
+         */
+        blend_porter_duff_src_in,
+
+        /*!
+         * Porter-Duff dst-in mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is
+         * \code
+         * F.a = S.a * D.a
+         * F.rgb = D.rgb * S.a
+         * \endcode
+         */
+        blend_porter_duff_dst_in,
+
+        /*!
+         * Porter-Duff  mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a * (1 - D.a)
+         * F.rgb =  S.rgb * (1 - D.a)
+         * \endcode
+         */
+        blend_porter_duff_src_out,
+
+        /*!
+         * Porter-Duff src-out mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = D.a * (1.0 - S.a)
+         * F.rgb = D.rgb * (1.0 - S.a)
+         * \endcode
+         */
+        blend_porter_duff_dst_out,
+
+        /*!
+         * Porter-Duff src-atop mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = D.a
+         * F.rgb = S.rgb * D.a + D.rgb * (1.0 - S.a)
+         * \endcode
+         */
+        blend_porter_duff_src_atop,
+
+        /*!
+         * Porter-Duff dst-atop mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a
+         * F.rgb = D.rgb * S.a + S.rgb * (1 - D.a)
+         * \endcode
+         */
+        blend_porter_duff_dst_atop,
+
+        /*!
+         * Porter-Duff xor mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a * (1 - D.a) + D.a * (1 - S.a)
+         * F.rgb = S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         */
+        blend_porter_duff_xor,
+
+        /*!
+         * Plus blend mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a
+         * F.rgb = S.rgb + D.rgb
+         * \endcode
+         */
+        blend_porter_duff_plus,
+
+        /*!
+         * Modulate blend mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a * D.a
+         * F.rgb = S.rgb * D.rgb
+         * \endcode
+         */
+        blend_porter_duff_modulate,
+
+        /*!
+         * Screen mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c = S.c + D.c - S.c * D.c
+         * \endcode
+         */
+        blend_w3c_screen,
+
+        /*!
+         * Overlay mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c =
+         *           2 * S * D, if D <= 0.5
+         *           1 - 2 * (1 - S) * (1 - D), otherwise
+         * \endcode
          */
         blend_w3c_overlay,
-        blend_w3c_darken, /*!< W3C darken mode: min(Src, Dest) */
-        blend_w3c_lighten, /*!< W3C lighten mode: max(Src, Dest) */
 
         /*!
-         * W3C color-dodge mode: for each channel
-         * (Dest == 0) ? 0 : (Src == 1) ? 1 : min(1, Dst / (1 - Src) )
-         * i.e. if Dest is 0, write 0. If Src is 1, write 1. Otherwise
-         * write Dst / (1 - Src)
+         * Darken mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c = min(S, D)
+         * \endcode
+         */
+        blend_w3c_darken,
+
+        /*!
+         * Lighten mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c = max(S.c, D.c)
+         * \endcode
+         */
+        blend_w3c_lighten,
+
+        /*!
+         * Color dodge mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c =
+         *           0, if D.c <= 0
+         *           min(1, D.c / (1 - S.c)), if D.c > 0 and S.c < 1
+         *           1, if D.c > 0 and S.c >= 1
+         * \endcode
          */
         blend_w3c_color_dodge,
 
         /*!
-         * W3C color-burn mode: for each channel
-         * (Dest == 1) ? 1 : (Src == 0) ? 0 : 1 - min(1, (1 - Dst) / Src)
-         * i.e. if Dest is 1, write 1. If Src is 0, write 0. Otherwise
-         * write (1 - Dst ) / Src
+         * Color burn mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c =
+         *           1, if D.c >= 1
+         *           1 - min(1, (1 - D.c) / S.c), if D.c < 1 and S.c > 0
+         *           0, if D.c < 1 and S.c <= 0
+         * \endcode
          */
         blend_w3c_color_burn,
 
         /*!
-         * W3C hardlight mode: for each channel,
-         * (Src <= 0.5) ?
-         *    2.0 * Dest * Src :
-         *    1 - 2 * (1 - Dst) * (1 - Src)
+         * Harlight mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c = 2 * S.c * D.c, if S.c <= 0.5
+         *           1 - 2 * (1 - S.c) * (1 - D.c), otherwise
+         * \endcode
          */
         blend_w3c_hardlight,
 
         /*!
-         * W3C soft light mode: for each channel:
-         * (Src <= 0.5) ?
-         *   Dst - (1 - 2 * Src) * Dst * (1 - Dst) :
-         *   Dst + (2 * Src - 1) * (Z - Dst)
-         * where
-         *   Z = (Dst <= 0.25) ?
-         *     ((16 * Dst - 12) * Dst + 4) * Dst :
-         *     sqrt(Dst)
+         * Softlight mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c =
+         *          D.c - (1 - 2 * S.c) * D.c * (1 - D.c), if S.c <= 0.5
+         *          D.c + (2 * S.c - 1) * D.c * ((16 * D.c - 12) * D.c + 3), if S.c > 0.5 and D.c <= 0.25
+         *          D.c + (2 * S.c - 1) * (sqrt(D.c) - D.c), if S.c > 0.5 and D.c > 0.25
+         * \endcode
          */
         blend_w3c_softlight,
 
-        blend_w3c_difference, /*!< W3C difference mode: for each channel, abs(Dest - Src) */
-        blend_w3c_exclusion, /*!< W3C exclusion mode: for each channel, Dest + Src - 2 * Dest * Src */
+        /*!
+         * Difference mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a  +  D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c = abs(S.c - D.c)
+         * \endcode
+         */
+        blend_w3c_difference,
 
         /*!
-         * w3c hue mode, see w3c for formula
+         * Exclusion mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c = S.c + D.c - 2 * S.c * D.c
+         * \endcode
+         */
+        blend_w3c_exclusion,
+
+        /*!
+         * Multiply mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where for each channel c,
+         * \code
+         * f(S, D).c = S.c * D.c
+         * \endcode
+         */
+        blend_w3c_multiply,
+
+        /*!
+         * Hue mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where
+         * \code
+         * f(S.rgb, D.rgb).rgb = OverrideLuminosityAndSaturation(S.rgb, D.rgb, D.rgb)
+         * \endcode
          */
         blend_w3c_hue,
 
         /*!
-         * w3c saturation mode, see w3c for formula
+         * Saturation mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where
+         * \code
+         * f(S.rgb, D.rgb).rgb = OverrideLuminosityAndSaturation(D.rgb, S.rgb, D.rgb)
+         * \endcode
          */
         blend_w3c_saturation,
 
         /*!
-         * w3c color mode, see w3c for formula
+         * Color mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where
+         * \code
+         * f(S.rgb, D.rgb).rgb = OverrideLuminosity(S.rgb, D.rgb)
+         * \endcode
          */
         blend_w3c_color,
 
         /*!
-         * w3c luminosity mode, see w3c for formula
+         * Luminosity mode. Letting S be the value from the
+         * fragment shader and D be the current value in the framebuffer,
+         * replaces the value in the framebuffer with F where F is:
+         * \code
+         * F.a = S.a + D.a * (1 - S.a)
+         * F.rgb = f(UndoAlpha(S), UndoAlpha(D)) * S.a * D.a + S.rgb * (1 - D.a) + D.rgb * (1 - S.a)
+         * \endcode
+         * where
+         * \code
+         * f(S.rgb, D.rgb).rgb = OverrideLuminosity(D.rgb, S.rgb)
+         * \endcode
          */
         blend_w3c_luminosity,
+
+        number_blend_mode,
+      };
+
+    /*!
+     * \brief
+     * Enumeration to query the statistics of how
+     * much data has been packed
+     */
+    enum query_stats_t
+      {
+        /*!
+         * Offset to how many attributes processed
+         */
+        num_attributes,
+
+        /*!
+         * Offset to how many indices processed
+         */
+        num_indices,
+
+        /*!
+         * Offset to how many uvec4 values placed
+         * onto store buffer(s).
+         */
+        num_datas,
+
+        /*!
+         * Offset to how many PainterDraw objects sent
+         */
+        num_draws,
+
+        /*!
+         * Offset to how many painter headers packed.
+         */
+        num_headers,
+
+        /*!
+         * Number of distinct render targets needed.
+         */
+        num_render_targets,
+
+        /*!
+         * Number of times PainterBackend::end() was called
+         */
+        num_ends,
+
+        /*!
+         * Number of begin_layer()/end_layer() pairs called
+         */
+        num_layers,
+
+        /*!
+         * Number of begin_coverage_buffer()/end_coverage_buffer() pairs called
+         */
+        num_deferred_coverages,
       };
 
     /*!
@@ -358,6 +835,96 @@ namespace fastuidraw
     static
     enum fill_rule_t
     complement_fill_rule(enum fill_rule_t f);
+
+    /*!
+     * Returns true if a \ref join_style is a miter-type join, i.e.
+     * one of \ref miter_clip_joins, \ref miter_bevel_joins or
+     * \ref miter_joins.
+     * \param js join style to query
+     */
+    static
+    inline
+    bool
+    is_miter_join(enum join_style js)
+    {
+      return js == miter_clip_joins
+        || js == miter_bevel_joins
+        || js == miter_joins;
+    }
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum screen_orientation v);
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum rotation_orientation_t v);
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum glyph_layout_type v);
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum cap_style v);
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum join_style v);
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum fill_rule_t v);
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum stroking_method_t v);
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum blend_mode_t v);
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum query_stats_t v);
   };
 /*! @} */
 }
+
+#endif

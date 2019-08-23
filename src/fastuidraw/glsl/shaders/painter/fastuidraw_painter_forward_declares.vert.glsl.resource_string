@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,36 +12,35 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-
-/////////////////////////////////////////////////////
-// machine generated header from C++ sources
-uint
-fastuidraw_read_stroking_params(in uint location, out fastuidraw_stroking_params p);
-
-uint
-fastuidraw_read_dashed_stroking_params_header(in uint location, out fastuidraw_dashed_stroking_params_header p);
-
 void
-fastuidraw_read_header(in uint location, out fastuidraw_shader_header h);
+fastuidraw_read_header(in uint location, out fastuidraw_header h);
 
 void
 fastuidraw_read_clipping(in uint clipping_location, out fastuidraw_clipping_data p);
 
 void
-fastuidraw_read_item_matrix(in uint item_matrix_location, out mat3 m);
+fastuidraw_read_item_matrix(in uint item_matrix_location, out mat3 m, out vec2 t);
 
 void
-fastuidraw_run_vert_shader(in fastuidraw_shader_header h, out int add_z,
+fastuidraw_read_brush_adjust(in uint painter_adjust_location, out fastuidraw_brush_adjust_data p);
+
+#if defined(FASTUIDRAW_RENDER_TO_COLOR_BUFFER)
+
+void
+fastuidraw_run_vert_shader(in fastuidraw_header h, out int add_z,
                            out vec2 brush_p, out vec3 out_clip_p);
 
-///////////////////////////////////////////////////////////////////////
-// routines implemented in .glsl.resource_string files
 void
-fastuidraw_vert_brush_processing(in vec2 in_p, in fastuidraw_shader_header h);
+fastuidraw_run_brush_vert_shader(in fastuidraw_header h, in vec2 brush_p);
+
+
+#else
 
 void
-fastuidraw_apply_clipping(in vec3 p, in fastuidraw_clipping_data c);
+fastuidraw_run_vert_shader(in fastuidraw_header h, out vec3 out_clip_p);
+
+#endif

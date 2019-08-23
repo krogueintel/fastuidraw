@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_GLYPH_CACHE_HPP
+#define FASTUIDRAW_GLYPH_CACHE_HPP
 
 #include <fastuidraw/util/reference_counted.hpp>
 #include <fastuidraw/text/glyph_atlas.hpp>
@@ -28,7 +29,7 @@
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
 
@@ -39,9 +40,50 @@ namespace fastuidraw
    * safe because it maintains an internal mutex lock for the durations
    * of its methods.
    */
-  class GlyphCache:public reference_counted<GlyphCache>::default_base
+  class GlyphCache:public reference_counted<GlyphCache>::concurrent
   {
   public:
+    /*!
+     * An AllocationHandle represents a handle to data allocated
+     * on the underlying GlyphAtlas of a GlyphCache. The handle
+     * is to be used to deallocate from the GlyphAtlas. Note that
+     * all data on the GlyphCache is deallocated when \ref
+     * GlyphCache::clear_atlas() or \ref GlyphCache::clear_cache()
+     * is called.
+     */
+    class AllocationHandle
+    {
+    public:
+      AllocationHandle(void):
+        m_location(0),
+        m_size(0)
+      {}
+
+      /*!
+       * Returns true if the AllocationHandle refers
+       * to a successful allocation.
+       */
+      bool
+      valid(void) const
+      {
+        return m_size > 0;
+      }
+
+      /*!
+       * Returns the location within the GlyphAtlas of the
+       * allocated data.
+       */
+      unsigned int
+      location(void) const
+      {
+        return m_location;
+      }
+
+    private:
+      friend class GlyphCache;
+      unsigned int m_location, m_size;
+    };
+
     /*!
      * Ctor
      * \param patlas GlyphAtlas to store glyph data
@@ -58,8 +100,7 @@ namespace fastuidraw
      * \param glyph_code glyph code
      */
     GlyphMetrics
-    fetch_glyph_metrics(const reference_counted_ptr<const FontBase> &font,
-                        uint32_t glyph_code);
+    fetch_glyph_metrics(const FontBase *font, uint32_t glyph_code);
 
     /*!
      * Fetch, and if necessay create and store, the metrics
@@ -69,7 +110,7 @@ namespace fastuidraw
      * \param out_metrics location to which to write the Glyph
      */
     void
-    fetch_glyph_metrics(const reference_counted_ptr<const FontBase> &font,
+    fetch_glyph_metrics(const FontBase *font,
                         c_array<const uint32_t> glyph_codes,
                         c_array<GlyphMetrics> out_metrics);
 
@@ -93,8 +134,7 @@ namespace fastuidraw
      * \param upload_to_atlas if true, upload to atlas
      */
     Glyph
-    fetch_glyph(GlyphRenderer render,
-                const reference_counted_ptr<const FontBase> &font,
+    fetch_glyph(GlyphRenderer render, const FontBase *font,
                 uint32_t glyph_code, bool upload_to_atlas = true);
 
     /*!
@@ -109,8 +149,7 @@ namespace fastuidraw
      * \param upload_to_atlas if true, upload glyphs to atlas
      */
     void
-    fetch_glyphs(GlyphRenderer render,
-                 const reference_counted_ptr<const FontBase> &font,
+    fetch_glyphs(GlyphRenderer render, const FontBase *font,
                  c_array<const uint32_t> glyph_codes,
                  c_array<Glyph> out_glyphs,
                  bool upload_to_atlas = true);
@@ -173,7 +212,7 @@ namespace fastuidraw
 
     /*!
      * Call to clear the backing GlyphAtlas. In doing so, the glyphs
-     * will no longer be uploaded to the GlyphAtlas and will need
+     * will lose their backing store in the GlyphAtlas and will need
      * to be re-uploaded (see Glyph::upload_to_atlas()). The glyphs
      * however are NOT removed from this GlyphCache. Thus, the return
      * values of previous calls to create_glyph() are still valie, but
@@ -184,13 +223,40 @@ namespace fastuidraw
     clear_atlas(void);
 
     /*!
-     * Clear this GlyphCache and the GlyphAtlas. Essentially NUKE.
+     * Returns the number of times that this GlyphCache cleared
+     * its GlyphAtlas (i.e. the number of times clear_atlas() or
+     * clear_cache() have been called).
+     */
+    unsigned int
+    number_times_atlas_cleared(void);
+
+    /*!
+     * Clear this GlyphCache and the GlyphAtlas backing the glyphs.
+     * Thus all previous \ref Glyph and \ref GlyphMetrics values
+     * returned are no longer valid. In addition, as a side-effect
+     * of clearing all Glyph and GlyphMetrics values, all references
+     * to \ref FontBase objects are also released.
      */
     void
     clear_cache(void);
+
+    /*!
+     * Allocate and set data in the GlyphAtlas of this GlyphCache.
+     */
+    AllocationHandle
+    allocate_data(c_array<const uint32_t> pdata);
+
+    /*!
+     * Deallocate data in the GlyphAtlas of this GlyphCache
+     * previously allocated with allocate_data().
+     */
+    void
+    deallocate_data(AllocationHandle h);
 
   private:
     void *m_d;
   };
 /*! @} */
 } //namespace fastuidraw
+
+#endif

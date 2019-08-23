@@ -1,7 +1,7 @@
 FASTUIDRAW_DEPS_LIBS += $(shell pkg-config freetype2 --libs)
 FASTUIDRAW_DEPS_STATIC_LIBS += $(shell pkg-config freetype2 --static --libs)
 
-FASTUIDRAW_BASE_CFLAGS = -std=c++11 -D_USE_MATH_DEFINES
+FASTUIDRAW_BASE_CFLAGS = -std=c++11
 FASTUIDRAW_debug_BASE_CFLAGS = $(FASTUIDRAW_BASE_CFLAGS) -DFASTUIDRAW_DEBUG
 FASTUIDRAW_release_BASE_CFLAGS = $(FASTUIDRAW_BASE_CFLAGS)
 
@@ -9,10 +9,10 @@ FASTUIDRAW_DEPENDS_CFLAGS = $(shell pkg-config freetype2 --cflags)
 FASTUIDRAW_debug_CFLAGS =  $(FASTUIDRAW_DEPENDS_CFLAGS) $(FASTUIDRAW_debug_BASE_CFLAGS)
 FASTUIDRAW_release_CFLAGS = $(FASTUIDRAW_DEPENDS_CFLAGS) $(FASTUIDRAW_release_BASE_CFLAGS)
 
-FASTUIDRAW_BUILD_debug_FLAGS = -g
+FASTUIDRAW_BUILD_debug_FLAGS = -g -D_GLIBCXX_DEBUG
 FASTUIDRAW_BUILD_release_FLAGS = -O3 -fstrict-aliasing
 FASTUIDRAW_BUILD_WARN_FLAGS = -Wall -Wextra -Wcast-qual -Wwrite-strings
-FASTUIDRAW_BUILD_INCLUDES_CFLAGS = -Iinc
+FASTUIDRAW_BUILD_INCLUDES_CFLAGS = -Iinc -Isrc/fastuidraw/internal -Isrc/fastuidraw/internal/3rd_party
 
 #
 #  STRING_RESOURCE_CC inputfile resourcename outputpath
@@ -69,7 +69,7 @@ else
 
 libFastUIDraw_$(1): libFastUIDraw_$(1).so
 libFastUIDraw_$(1).so: $(FASTUIDRAW_STRING_RESOURCES_SRCS) $$(FASTUIDRAW_$(1)_ALL_OBJS)
-	$(CXX) -shared -Wl,-soname,libFastUIDraw_$(1).so -o libFastUIDraw_$(1).so $$(FASTUIDRAW_$(1)_ALL_OBJS) $(FASTUIDRAW_DEPS_LIBS)
+	$(CXX) -shared -Wl,$$(SONAME),libFastUIDraw_$(1).so -o libFastUIDraw_$(1).so $$(FASTUIDRAW_$(1)_ALL_OBJS) $(FASTUIDRAW_DEPS_LIBS)
 CLEAN_FILES += libFastUIDraw_$(1).so
 INSTALL_LIBS += libFastUIDraw_$(1).so
 .PHONY: libFastUIDraw_$(1) libFastUIDraw
@@ -91,10 +91,24 @@ endef
 
 TARGETLIST += libFastUIDraw libFastUIDraw_release libFastUIDraw_debug
 TARGETLIST += libFastUIDraw-static libFastUIDraw_release-static libFastUIDraw_debug-static
+
+TARGETLIST += libs libs-release libs-debug
+libs: libs-release libs-debug
+.PHONY: libs
+libs-release: libFastUIDraw_release
+.PHONY: libs-release
+libs-debug: libFastUIDraw_debug
+.PHONY: libs-debug
+
+TARGETLIST += libs-static libs-release-static libs-debug-static
+libs-static: libs-release-static libs-debug-static
+.PHONY: libs-static
+libs-release-static: libFastUIDraw_release-static
+.PHONY: libs-release-static
+libs-debug-static: libFastUIDraw_debug-static
+.PHONY: libs-debug-static
+
+
 $(call librules,release)
 $(call librules,debug)
 all: libFastUIDraw
-
-ifeq ($(BUILD_NEGL),1)
-all: libNEGL
-endif

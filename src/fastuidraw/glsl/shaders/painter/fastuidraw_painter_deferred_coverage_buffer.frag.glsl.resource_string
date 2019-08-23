@@ -1,0 +1,44 @@
+/*!
+ * \file fastuidraw_painter_deferred_coverage_buffer.frag.glsl.resource_string
+ * \brief file fastuidraw_painter_deferred_coverage_buffer.frag.glsl.resource_string
+ *
+ * Copyright 2018 by Intel.
+ *
+ * Contact: kevin.rogovin@gmail.com
+ *
+ * This Source Code Form is subject to the
+ * terms of the Mozilla Public License, v. 2.0.
+ * If a copy of the MPL was not distributed with
+ * this file, You can obtain one at
+ * http://mozilla.org/MPL/2.0/.
+ *
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
+ *
+ */
+
+FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_PAINTER_DEFERRED_COVERAGE_TEXTURE_BINDING) uniform sampler2D fastuidraw_deferred_coverage_buffer;
+
+float
+fastuidraw_read_deferred_coverage_buffer_value_at(ivec2 p)
+{
+  /* We need to clamp the the value p into the range that the
+   * drawn item is allowed to use from the coverage buffer.
+   * If p is outside of the range, then we return 0.
+   */
+  p.x += fastuidraw_deferred_buffer_offset_x;
+  p.y += fastuidraw_deferred_buffer_offset_y;
+  if (p.x < fastuidraw_deferred_buffer_min_x
+      || p.y < fastuidraw_deferred_buffer_min_y
+      || p.x > fastuidraw_deferred_buffer_max_x
+      || p.y > fastuidraw_deferred_buffer_max_y)
+    {
+      return 0.0;
+    }
+  else
+    {
+      return texelFetch(fastuidraw_deferred_coverage_buffer, p, 0).r;
+    }
+}
+
+#define fastuidraw_read_deferred_coverage_buffer \
+  fastuidraw_read_deferred_coverage_buffer_value_at(ivec2(gl_FragCoord.xy))

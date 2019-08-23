@@ -30,7 +30,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 /** \file generic_command_line.hpp */
-#pragma once
+#ifndef FASTUIDRAW_DEMO_GENERIC_COMMAND_LINE_HPP
+#define FASTUIDRAW_DEMO_GENERIC_COMMAND_LINE_HPP
 
 #include <iostream>
 #include <vector>
@@ -561,7 +562,7 @@ public:
               }
             ostr_desc << *siter;
           }
-        ostr_desc << ":" << iter->second.description() << "\n\n";
+        ostr_desc << ": " << iter->second.description() << "\n\n";
       }
     ostr << format_description_string(m_name, ostr_desc.str());
     m_description = tabs_to_spaces(ostr.str());
@@ -666,3 +667,5 @@ private:
   bool m_set_by_command_line, m_print_at_set;
   enumerated_type<T> m_value;
 };
+
+#endif

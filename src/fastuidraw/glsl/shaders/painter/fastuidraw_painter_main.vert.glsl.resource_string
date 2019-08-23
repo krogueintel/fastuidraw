@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,7 +12,7 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
@@ -27,60 +27,44 @@
   #define FASTUIDRAW_DEPTH_COEFF (1.0 / float(fastuidraw_max_z) )
 #endif
 
-#ifdef FASTUIDRAW_PAINTER_CLIPPING_USE_GL_CLIP_DISTACE
-  #define fastuidraw_clip0 gl_ClipDistance[0]
-  #define fastuidraw_clip1 gl_ClipDistance[1]
-  #define fastuidraw_clip2 gl_ClipDistance[2]
-  #define fastuidraw_clip3 gl_ClipDistance[3]
-#else
-  #define fastuidraw_clip0 fastuidraw_clip_plane0
-  #define fastuidraw_clip1 fastuidraw_clip_plane1
-  #define fastuidraw_clip2 fastuidraw_clip_plane2
-  #define fastuidraw_clip3 fastuidraw_clip_plane3
-#endif
-
-void
-fastuidraw_apply_clipping(in vec3 p, in fastuidraw_clipping_data c)
-{
-  fastuidraw_clip0 = dot(c.clip0, p);
-  fastuidraw_clip1 = dot(c.clip1, p);
-  fastuidraw_clip2 = dot(c.clip2, p);
-  fastuidraw_clip3 = dot(c.clip3, p);
-}
-
 void
 main(void)
 {
-  fastuidraw_shader_header h;
-  vec2 brush_p;
+  fastuidraw_header h;
+  vec2 brush_p, normalized_translate;
   vec3 clip_p;
   fastuidraw_clipping_data clipping;
   float normalized_depth, raw_depth;
   int add_z;
 
   fastuidraw_read_header(fastuidraw_header_attribute, h);
-  fastuidraw_process_header(h);
   fastuidraw_read_clipping(h.clipping_location, clipping);
-  fastuidraw_read_item_matrix(h.item_matrix_location, fastuidraw_item_matrix);
+  fastuidraw_read_item_matrix(h.item_matrix_location, fastuidraw_item_matrix, normalized_translate);
 
-  #ifdef FASTUIDRAW_PAINTER_UNPACK_AT_FRAGMENT_SHADER
-    {
-      fastuidraw_header_varying = fastuidraw_header_attribute;
-    }
-  #else
-    {
-      fastuidraw_frag_shader = h.item_shader;
-      fastuidraw_frag_shader_data_location = h.item_shader_data_location;
-      fastuidraw_composite_shader = h.composite_shader;
-      fastuidraw_composite_shader_data_location = h.composite_shader_data_location;
-      fastuidraw_blend_shader = h.blend_shader;
-      fastuidraw_blend_shader_data_location = h.blend_shader_data_location;
-    }
-  #endif
+  fastuidraw_frag_shader = h.item_shader;
+  fastuidraw_frag_shader_data_location = h.item_shader_data_location;
+  fastuidraw_blend_shader = h.blend_shader;
+  fastuidraw_blend_shader_data_location = h.blend_shader_data_location;
+  fastuidraw_deferred_buffer_offset_x = h.offset_to_deferred_coverage.x;
+  fastuidraw_deferred_buffer_offset_y = h.offset_to_deferred_coverage.y;
+  fastuidraw_deferred_buffer_min_x = h.deferred_coverage_min.x;
+  fastuidraw_deferred_buffer_min_y = h.deferred_coverage_min.y;
+  fastuidraw_deferred_buffer_max_x = h.deferred_coverage_max.x;
+  fastuidraw_deferred_buffer_max_y = h.deferred_coverage_max.y;
 
   fastuidraw_run_vert_shader(h, add_z, brush_p, clip_p);
-  fastuidraw_vert_brush_processing(brush_p, h);
-  if ((h.flags & FASTUIDRAW_HEADER_DRAWING_OCCLUDER) != 0u)
+  if (h.brush_adjust_location != 0u)
+    {
+      fastuidraw_brush_adjust_data adjust;
+      fastuidraw_read_brush_adjust(h.brush_adjust_location, adjust);
+      brush_p = adjust.shear * brush_p + adjust.translate;
+    }
+
+  fastuidraw_brush_shader_data_location = h.brush_shader_data_location;
+  fastuidraw_brush_shader = h.brush_shader;
+  fastuidraw_run_brush_vert_shader(h, brush_p);
+
+  if (h.blend_shader_data_location == FASTUIDRAW_HEADER_DRAWING_OCCLUDER)
     {
       add_z = 0;
     }
@@ -104,11 +88,6 @@ main(void)
     }
   #endif
 
-  #ifdef FASTUIDRAW_PAINTER_NEGATE_POSITION_Y_COORDINATE
-    {
-      clip_p.y = -clip_p.y;
-    }
-  #endif
-
+  clip_p.xy += normalized_translate * clip_p.z;
   gl_Position = vec4(clip_p.xy, normalized_depth * clip_p.z, clip_p.z);
 }

@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,7 +12,7 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
@@ -21,10 +21,12 @@
 #include <fastuidraw/text/glyph_render_data.hpp>
 #include <fastuidraw/text/glyph_render_data_texels.hpp>
 #include <fastuidraw/text/glyph_render_data_restricted_rays.hpp>
+#include <fastuidraw/text/glyph_render_data_banded_rays.hpp>
 
-#include "../private/array2d.hpp"
-#include "../private/util_private.hpp"
-#include "../private/int_path.hpp"
+#include <private/array2d.hpp>
+#include <private/util_private.hpp>
+#include <private/int_path.hpp>
+#include <private/bezier_util.hpp>
 
 #include <ft2build.h>
 #include FT_OUTLINE_H
@@ -274,11 +276,32 @@ namespace
                                           fastuidraw::Path &path,
                                           fastuidraw::vec2 &render_size);
 
+    template<typename T>
     void
-    compute_rendering_data(fastuidraw::GlyphMetrics glyph_metrics,
-                           fastuidraw::GlyphRenderDataRestrictedRays &output,
-                           fastuidraw::Path &path,
-			   fastuidraw::vec2 &render_size);
+    compute_rendering_data_rays(fastuidraw::GlyphMetrics glyph_metrics,
+                                T &output,
+                                fastuidraw::Path &path,
+                                fastuidraw::vec2 &render_size);
+
+    void
+    compute_rendering_data_rays_finalize(fastuidraw::GlyphMetrics glyph_metrics,
+                                         fastuidraw::GlyphRenderDataRestrictedRays &output,
+                                         const fastuidraw::RectT<int> &rectI,
+                                         enum fastuidraw::PainterEnums::fill_rule_t fill_rule)
+    {
+      fastuidraw::Rect rect(rectI);
+      output.finalize(fill_rule, rect, glyph_metrics.units_per_EM());
+    }
+
+    void
+    compute_rendering_data_rays_finalize(fastuidraw::GlyphMetrics /*glyph_metrics*/,
+                                         fastuidraw::GlyphRenderDataBandedRays &output,
+                                         const fastuidraw::RectT<int> &rectI,
+                                         enum fastuidraw::PainterEnums::fill_rule_t fill_rule)
+    {
+      fastuidraw::Rect rect(rectI);
+      output.finalize(fill_rule, rect);
+    }
 
     fastuidraw::reference_counted_ptr<fastuidraw::FreeTypeFace::GeneratorBase> m_generator;
     GenerateParams m_generate_params;
@@ -350,6 +373,7 @@ FontFreeTypePrivate(fastuidraw::FontFreeType *p,
           m_all_faces_null = false;
           m_number_glyphs = m_faces[i].m_face->face()->num_glyphs;
           FT_Set_Transform(m_faces[i].m_face->face(), nullptr, nullptr);
+          FASTUIDRAWwarn_assert(m_faces[i].m_face->face()->face_flags & FT_FACE_FLAG_SCALABLE);
         }
     }
 }
@@ -516,18 +540,22 @@ compute_rendering_data_distance_field(fastuidraw::GlyphMetrics glyph_metrics,
                                    &output);
 }
 
+template<typename T>
 void
 FontFreeTypePrivate::
-compute_rendering_data(fastuidraw::GlyphMetrics glyph_metrics,
-                       fastuidraw::GlyphRenderDataRestrictedRays &output,
-                       fastuidraw::Path &path,
-		       fastuidraw::vec2 &render_size)
+compute_rendering_data_rays(fastuidraw::GlyphMetrics glyph_metrics,
+                            T &output,
+                            fastuidraw::Path &path,
+                            fastuidraw::vec2 &render_size)
 {
-  fastuidraw::detail::IntPath int_path_ecm;
-  fastuidraw::ivec2 layout_offset, layout_size;
+  using namespace fastuidraw;
+
+  const float rel_tol(1e-4);
+  detail::IntPath int_path_ecm;
+  ivec2 layout_offset, layout_size;
   int outline_flags;
   uint32_t glyph_code(glyph_metrics.glyph_code());
-  int scale_factor;
+  float cubic_tol;
 
   {
     FaceGrabber p(this);
@@ -539,60 +567,54 @@ compute_rendering_data(fastuidraw::GlyphMetrics glyph_metrics,
     FT_Face face(p.m_p->face());
     load_glyph(face, glyph_code);
     outline_flags = face->glyph->outline.flags;
-    layout_offset = fastuidraw::ivec2(face->glyph->metrics.horiBearingX,
-                                      face->glyph->metrics.horiBearingY);
+    layout_offset = ivec2(face->glyph->metrics.horiBearingX,
+                          face->glyph->metrics.horiBearingY);
     layout_offset.y() -= face->glyph->metrics.height;
-    layout_size = fastuidraw::ivec2(face->glyph->metrics.width,
-                                    face->glyph->metrics.height);
+    layout_size = ivec2(face->glyph->metrics.width,
+                        face->glyph->metrics.height);
 
-    if (ComputeOutlineDegree::compute(&face->glyph->outline) > 2)
-      {
-        /* When breaking cubics into quadratics, the first step is
-         * to break each cubic into 4 (via De Casteljau's algorithm)
-         * and then approximate each cubic with a single quadratic.
-         * Each run of De Casteljau's algorithm on a cubic invokes
-         * a dived by 8, running it twice gives a divide by 64; thus
-         * to avoid losing any information from that, we scale up by
-         * 64.
-         */
-        scale_factor = 64;
-      }
-    else
-      {
-        scale_factor = 1;
-      }
-
-    layout_offset *= scale_factor;
-    layout_size *= scale_factor;
+    int scale_factor(1);
     IntPathCreator::decompose_to_path(&face->glyph->outline, int_path_ecm, scale_factor);
   }
 
   /* render size is identical to metric's size because there is
-   * no discretization from the glyph'sp outline data.
+   * no discretization from the glyph's outline data.
    */
   render_size = glyph_metrics.size();
+  cubic_tol = t_max(render_size.x(), render_size.y()) * rel_tol;
 
   /* extract to a Path */
-  fastuidraw::detail::IntBezierCurve::transformation<float> tr(1.0f / float(scale_factor));
+  detail::IntBezierCurve::transformation<float> tr;
   int_path_ecm.add_to_path(tr, &path);
 
-  int_path_ecm.replace_cubics_with_quadratics();
   for (const auto &contour : int_path_ecm.contours())
     {
       if (!contour.curves().empty())
         {
-          output.move_to(contour.curves().front().control_pts().front());
+          output.move_to(vec2(contour.curves().front().control_pts().front()));
           for (const auto &curve: contour.curves())
             {
-              if (curve.degree() == 2)
+              c_array<const ivec2> pts(curve.control_pts());
+              switch(curve.degree())
                 {
-                  output.quadratic_to(curve.control_pts()[1],
-                                      curve.control_pts()[2]);
-                }
-              else
-                {
-                  FASTUIDRAWassert(curve.degree() == 1);
-                  output.line_to(curve.control_pts()[1]);
+                case 1:
+                  output.line_to(vec2(pts[1]));
+                  break;
+                case 2:
+                  output.quadratic_to(vec2(pts[1]), vec2(pts[2]));
+                  break;
+                case 3:
+                  {
+                    const int max_recursion(6);
+                    vecN<vec2, 4> cubic;
+
+                    cubic[0] = vec2(pts[0]);
+                    cubic[1] = vec2(pts[1]);
+                    cubic[2] = vec2(pts[2]);
+                    cubic[3] = vec2(pts[3]);
+                    detail::add_cubic_adaptive(max_recursion, &output, cubic, cubic_tol);
+                  }
+                  break;
                 }
             }
         }
@@ -603,18 +625,27 @@ compute_rendering_data(fastuidraw::GlyphMetrics glyph_metrics,
     fastuidraw::PainterEnums::odd_even_fill_rule:
     fastuidraw::PainterEnums::nonzero_fill_rule;
 
-  output.finalize(fill_rule, layout_offset, layout_offset + layout_size,
-                  static_cast<float>(scale_factor) * glyph_metrics.units_per_EM());
+  compute_rendering_data_rays_finalize(glyph_metrics, output,
+                                       fastuidraw::RectT<int>()
+                                       .min_point(layout_offset)
+                                       .max_point(layout_offset + layout_size),
+                                       fill_rule);
 }
 
 ///////////////////////////////////////////////////
 // fastuidraw::FontFreeType methods
+
+/* ICK: it feels gross that a temporary face/faces is/are created
+ * to compute the FontMetrics and the FontProperties to pass
+ * to the base class FontBase.
+ */
+
 fastuidraw::FontFreeType::
 FontFreeType(const reference_counted_ptr<FreeTypeFace::GeneratorBase> &pface_generator,
              const FontProperties &props,
              const reference_counted_ptr<FreeTypeLib> &plib,
              unsigned int num_faces):
-  FontBase(props)
+  FontBase(props, compute_font_metrics_from_face(pface_generator->create_face(plib)))
 {
   m_d = FASTUIDRAWnew FontFreeTypePrivate(this, pface_generator, plib, num_faces);
 }
@@ -623,7 +654,8 @@ fastuidraw::FontFreeType::
 FontFreeType(const reference_counted_ptr<FreeTypeFace::GeneratorBase> &pface_generator,
              const reference_counted_ptr<FreeTypeLib> &plib,
              unsigned int num_faces):
-  FontBase(compute_font_properties_from_face(pface_generator->create_face(plib)))
+  FontBase(compute_font_properties_from_face(pface_generator->create_face(plib)),
+           compute_font_metrics_from_face(pface_generator->create_face(plib)))
 {
   m_d = FASTUIDRAWnew FontFreeTypePrivate(this, pface_generator, plib, num_faces);
 }
@@ -692,7 +724,8 @@ can_create_rendering_data(enum glyph_type tp) const
 {
   return tp == coverage_glyph
     || tp == distance_field_glyph
-    || tp == restricted_rays_glyph;
+    || tp == restricted_rays_glyph
+    || tp == banded_rays_glyph;
 }
 
 unsigned int
@@ -733,7 +766,7 @@ compute_metrics(uint32_t glyph_code, GlyphMetricsValue &metrics) const
 fastuidraw::GlyphRenderData*
 fastuidraw::FontFreeType::
 compute_rendering_data(GlyphRenderer render, GlyphMetrics glyph_metrics,
-		       Path &path, vec2 &render_size) const
+                       Path &path, vec2 &render_size) const
 {
   FontFreeTypePrivate *d;
   d = static_cast<FontFreeTypePrivate*>(m_d);
@@ -763,7 +796,16 @@ compute_rendering_data(GlyphRenderer render, GlyphMetrics glyph_metrics,
       {
         GlyphRenderDataRestrictedRays *data;
         data = FASTUIDRAWnew GlyphRenderDataRestrictedRays();
-        d->compute_rendering_data(glyph_metrics, *data, path, render_size);
+        d->compute_rendering_data_rays<GlyphRenderDataRestrictedRays>(glyph_metrics, *data, path, render_size);
+        return data;
+      }
+      break;
+
+    case banded_rays_glyph:
+      {
+        GlyphRenderDataBandedRays *data;
+        data = FASTUIDRAWnew GlyphRenderDataBandedRays();
+        d->compute_rendering_data_rays<GlyphRenderDataBandedRays>(glyph_metrics, *data, path, render_size);
         return data;
       }
       break;
@@ -819,9 +861,45 @@ compute_font_properties_from_face(FT_Face in_face, FontProperties &out_propertie
 {
   if (in_face)
     {
-      out_properties.family(in_face->family_name);
-      out_properties.style(in_face->style_name);
-      out_properties.bold(in_face->style_flags & FT_STYLE_FLAG_BOLD);
-      out_properties.italic(in_face->style_flags & FT_STYLE_FLAG_ITALIC);
+      out_properties
+        .family(in_face->family_name)
+        .style(in_face->style_name)
+        .bold(in_face->style_flags & FT_STYLE_FLAG_BOLD)
+        .italic(in_face->style_flags & FT_STYLE_FLAG_ITALIC);
+    }
+}
+
+fastuidraw::FontMetrics
+fastuidraw::FontFreeType::
+compute_font_metrics_from_face(FT_Face in_face)
+{
+  FontMetrics return_value;
+  compute_font_metrics_from_face(in_face, return_value);
+  return return_value;
+}
+
+fastuidraw::FontMetrics
+fastuidraw::FontFreeType::
+compute_font_metrics_from_face(const reference_counted_ptr<FreeTypeFace> &in_face)
+{
+  FontMetrics return_value;
+  if (in_face && in_face->face())
+    {
+      compute_font_metrics_from_face(in_face->face(), return_value);
+    }
+  return return_value;
+}
+
+void
+fastuidraw::FontFreeType::
+compute_font_metrics_from_face(FT_Face in_face, FontMetrics &out_metrics)
+{
+  if (in_face)
+    {
+      out_metrics
+        .height(in_face->height)
+        .ascender(in_face->ascender)
+        .descender(in_face->descender)
+        .units_per_EM(in_face->units_per_EM);
     }
 }

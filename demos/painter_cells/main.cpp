@@ -50,8 +50,7 @@ protected:
   handle_event(const SDL_Event &ev);
 
 private:
-  typedef std::pair<enum Painter::composite_mode_t, std::string> named_composite_mode;
-  typedef std::pair<enum Painter::blend_w3c_mode_t, std::string> named_blend_mode;
+  typedef std::pair<enum Painter::blend_mode_t, std::string> named_blend_mode;
 
   static
   void
@@ -80,8 +79,8 @@ private:
   command_line_list<std::string> m_strings;
   command_line_list<std::string> m_files;
   command_line_list<std::string> m_images;
-  enumerated_command_line_argument_value<enum PainterBrush::image_filter> m_image_filter;
-  command_line_argument_value<unsigned int> m_image_mipmap_level;
+  enumerated_command_line_argument_value<enum PainterImageBrushShader::filter_t> m_image_filter;
+  command_line_argument_value<bool> m_image_use_mipmaps;
   command_line_argument_value<bool> m_use_atlas;
   command_line_argument_value<bool> m_draw_image_name;
   command_line_argument_value<int> m_num_background_colors;
@@ -113,10 +112,7 @@ private:
   PanZoomTrackerSDLEvent m_zoomer;
   Table *m_table;
   simple_time m_time, m_draw_timer;
-  PainterPackedValue<PainterBrush> m_text_brush;
-
-  unsigned int m_current_composite;
-  std::vector<named_composite_mode> m_composite_labels;
+  PainterData::brush_value m_text_brush;
 
   unsigned int m_current_blend;
   std::vector<named_blend_mode> m_blend_labels;
@@ -125,6 +121,8 @@ private:
   uint64_t m_benchmark_time_us;
   simple_time m_benchmark_timer;
   std::vector<uint64_t> m_frame_times;
+
+  int m_show_surface, m_last_shown_surface;
 };
 
 painter_cells::
@@ -137,30 +135,26 @@ painter_cells(void):
   m_font(default_font(), "font", "File from which to take font", *this),
   m_pixel_size(24.0f, "font_pixel_size", "Render size for text rendering", *this),
   m_renderer(adaptive_rendering,
-	     enumerated_string_type<enum glyph_type>()
-	     .add_entry("distance_field", distance_field_glyph, "Distance field rendering")
-	     .add_entry("restricted_rays", restricted_rays_glyph, "Restricted Rays rendering")
-	     .add_entry("adaptive", adaptive_rendering, "Adaptive rendering"),
-	     "glyph_render",
-	     "Specifies how to render glyphs",
-	     *this),
+             enumerated_string_type<enum glyph_type>()
+             .add_entry("distance_field", distance_field_glyph, "Distance field rendering")
+             .add_entry("restricted_rays", restricted_rays_glyph, "Restricted Rays rendering")
+             .add_entry("adaptive", adaptive_rendering, "Adaptive rendering"),
+             "glyph_render",
+             "Specifies how to render glyphs",
+             *this),
   m_fps_pixel_size(24.0f, "fps_font_pixel_size", "Render size for text rendering of fps", *this),
   m_strings("add_string", "add a string to use by the cells", *this),
   m_files("add_string_file", "add a string to use by a cell, taken from file", *this),
   m_images("add_image", "Add an image to use by the cells", *this),
-  m_image_filter(PainterBrush::image_filter_nearest,
-                 enumerated_string_type<enum PainterBrush::image_filter>()
-                 .add_entry("nearest", PainterBrush::image_filter_nearest, "nearest filtering")
-                 .add_entry("linear", PainterBrush::image_filter_linear, "(bi)linear filtering")
-                 .add_entry("cubic", PainterBrush::image_filter_cubic, "(bi)cubic filtering"),
+  m_image_filter(PainterImageBrushShader::filter_nearest,
+                 enumerated_string_type<enum PainterImageBrushShader::filter_t>()
+                 .add_entry("nearest", PainterImageBrushShader::filter_nearest, "nearest filtering")
+                 .add_entry("linear", PainterImageBrushShader::filter_linear, "(bi)linear filtering")
+                 .add_entry("cubic", PainterImageBrushShader::filter_cubic, "(bi)cubic filtering"),
                  "image_filter",
                  "Specifies how to filter the images applied to the rects",
                  *this),
-  m_image_mipmap_level(0, "image_mipmap_levels",
-                       "Maximum level of mipmap filtering applied "
-                       "(when use_atlas is true, this is clamped to "
-                       "log2_color_tile_size)",
-                       *this),
+  m_image_use_mipmaps(false, "image_mipmap", "If true, apply mipmapp filtering to images", *this),
   m_use_atlas(true, "use_atlas",
               "If false, each image is realized as a texture; if "
               "GL_ARB_bindless_texture or GL_NV_bindless_texture "
@@ -225,8 +219,9 @@ painter_cells(void):
                              "Initial value for anti-aliasing for stroking",
                              *this),
   m_table(nullptr),
-  m_current_composite(0),
-  m_current_blend(0)
+  m_current_blend(0),
+  m_show_surface(0),
+  m_last_shown_surface(0)
 {
   std::cout << "Controls:\n"
             << "\t[: decrease stroke width(hold left-shift for slower rate and right shift for faster)\n"
@@ -239,11 +234,11 @@ painter_cells(void):
             << "\tr: toggle rotating individual cells\n"
             << "\tt: toggle draw cell text\n"
             << "\ti: toggle draw cell image\n"
-            << "\tb: cycle composite mode applied to image rect\n"
+            << "\tb: cycle blend mode applied to image rect\n"
             << "\tctrl-b: cycle blend mode applied to image rect\n"
+            << "\ty: toggle drawing widgets as transparent or opaque\n"
             << "\tLeft Mouse Drag: pan\n"
             << "\tHold Left Mouse, then drag up/down: zoom out/in\n";
-
 }
 
 painter_cells::
@@ -324,27 +319,22 @@ add_single_image(const std::string &filename, std::vector<named_image> &dest)
 
       if (m_use_atlas.value())
         {
-          int slack(0);
-
-          slack = PainterBrush::slack_requirement(m_image_filter.value());
-          im = Image::create(m_painter->image_atlas(),
-                             image_data.width(), image_data.height(),
-                             image_data, slack);
+          im = m_painter->image_atlas().create(image_data.width(),
+                                               image_data.height(),
+                                               image_data,
+                                               Image::on_atlas);
         }
       else
         {
-          im = create_texture_image(m_painter->image_atlas(),
-                                    image_data.width(),
-                                    image_data.height(),
-                                    image_data.num_mipmap_levels(),
-                                    image_data);
+          im = m_painter->image_atlas().create_non_atlas(image_data.width(),
+                                                         image_data.height(),
+                                                         image_data);
         }
 
       switch (im->type())
         {
         case Image::on_atlas:
-          std::cout << " on atlas with slack = " << im->slack()
-                    << ", number_mipmap_levels = "
+          std::cout << " on atlas with number_mipmap_levels = "
                     << im->number_mipmap_levels();
           break;
         case Image::bindless_texture2d:
@@ -376,7 +366,7 @@ derived_init(int w, int h)
   reference_counted_ptr<FreeTypeFace::GeneratorBase> gen;
   gen = FASTUIDRAWnew FreeTypeFace::GeneratorMemory(m_font.value().c_str(), 0);
   m_table_params.m_font_database = m_font_database;
-  m_table_params.m_glyph_cache = m_glyph_cache;
+  m_table_params.m_glyph_cache = &m_painter->glyph_cache();
   if (gen->check_creation() == routine_success)
     {
       m_table_params.m_font = FASTUIDRAWnew FontFreeType(gen, m_ft_lib);
@@ -410,7 +400,9 @@ derived_init(int w, int h)
             m_table_params.m_images.end(),
             compare_named_images);
   m_table_params.m_image_filter = m_image_filter.value();
-  m_table_params.m_image_mipmap_level = m_image_mipmap_level.value();
+  m_table_params.m_image_mipmapping = m_image_use_mipmaps.value() ?
+    PainterImageBrushShader::apply_mipmapping:
+    PainterImageBrushShader::dont_apply_mipmapping;
 
   generate_random_colors(m_num_background_colors.value(), m_table_params.m_background_colors,
                          m_background_colors_opaque.value());
@@ -488,20 +480,20 @@ derived_init(int w, int h)
     }
 
 #define ADD_COMPOSITE_MODE(X)                                           \
-  m_composite_labels.push_back(named_composite_mode(Painter::X, #X))
+  m_blend_labels.push_back(named_blend_mode(Painter::X, #X))
 
-  ADD_COMPOSITE_MODE(composite_porter_duff_src_over);
-  ADD_COMPOSITE_MODE(composite_porter_duff_clear);
-  ADD_COMPOSITE_MODE(composite_porter_duff_src);
-  ADD_COMPOSITE_MODE(composite_porter_duff_dst);
-  ADD_COMPOSITE_MODE(composite_porter_duff_dst_over);
-  ADD_COMPOSITE_MODE(composite_porter_duff_src_in);
-  ADD_COMPOSITE_MODE(composite_porter_duff_dst_in);
-  ADD_COMPOSITE_MODE(composite_porter_duff_src_out);
-  ADD_COMPOSITE_MODE(composite_porter_duff_dst_out);
-  ADD_COMPOSITE_MODE(composite_porter_duff_src_atop);
-  ADD_COMPOSITE_MODE(composite_porter_duff_dst_atop);
-  ADD_COMPOSITE_MODE(composite_porter_duff_xor);
+  ADD_COMPOSITE_MODE(blend_porter_duff_src_over);
+  ADD_COMPOSITE_MODE(blend_porter_duff_clear);
+  ADD_COMPOSITE_MODE(blend_porter_duff_src);
+  ADD_COMPOSITE_MODE(blend_porter_duff_dst);
+  ADD_COMPOSITE_MODE(blend_porter_duff_dst_over);
+  ADD_COMPOSITE_MODE(blend_porter_duff_src_in);
+  ADD_COMPOSITE_MODE(blend_porter_duff_dst_in);
+  ADD_COMPOSITE_MODE(blend_porter_duff_src_out);
+  ADD_COMPOSITE_MODE(blend_porter_duff_dst_out);
+  ADD_COMPOSITE_MODE(blend_porter_duff_src_atop);
+  ADD_COMPOSITE_MODE(blend_porter_duff_dst_atop);
+  ADD_COMPOSITE_MODE(blend_porter_duff_xor);
 
 #define ADD_BLEND_MODE(X) do {                                          \
     if (m_painter->default_shaders().blend_shaders().shader(Painter::X)) \
@@ -510,7 +502,6 @@ derived_init(int w, int h)
       }                                                                 \
   } while(0)
 
-  ADD_BLEND_MODE(blend_w3c_normal);
   ADD_BLEND_MODE(blend_w3c_multiply);
   ADD_BLEND_MODE(blend_w3c_screen);
   ADD_BLEND_MODE(blend_w3c_overlay);
@@ -627,32 +618,69 @@ draw_frame(void)
         {
           ostr << "NAN";
         }
+
       ostr << "\nms = " << ms
-           << "\nDrew " << m_cell_shared_state.m_cells_drawn << " cells"
-           << "\nAttribs: "
-           << m_painter->query_stat(PainterPacker::num_attributes)
-           << "\nIndices: "
-           << m_painter->query_stat(PainterPacker::num_indices)
-           << "\nGenericData: "
-           << m_painter->query_stat(PainterPacker::num_generic_datas)
-           << "\nHeaders: "
-           << m_painter->query_stat(PainterPacker::num_headers)
-           << "\n";
-      if (!m_text_brush)
+           << "\nDrew " << m_cell_shared_state.m_cells_drawn << " cells";
+
+      fastuidraw::c_array<const unsigned int> stats(painter_stats());
+      for (unsigned int i = 0; i < stats.size(); ++i)
+        {
+          enum Painter::query_stats_t st;
+
+          st = static_cast<enum Painter::query_stats_t>(i);
+          ostr << "\n" << Painter::label(st) << ": " << stats[i];
+        }
+      ostr << "\ndraw_generics: " << m_painter->draw_data_added_count() << "\n";
+
+      if (!m_text_brush.packed())
         {
           PainterBrush brush;
-          brush.pen(0.0f, 1.0f, 1.0f, 1.0f);
-          m_text_brush = m_painter->packed_value_pool().create_packed_value(brush);
+          brush.color(0.0f, 1.0f, 1.0f, 1.0f);
+          m_text_brush = m_painter->packed_value_pool().create_packed_brush(brush);
         }
       draw_text(ostr.str(), m_fps_pixel_size.value(),
-                m_table_params.m_font, PainterData(m_text_brush));
+                m_table_params.m_font.get(), PainterData(m_text_brush));
     }
 
-  m_painter->end();
+  c_array<const PainterSurface* const> surfaces;
+
+  surfaces = m_painter->end();
   fastuidraw_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
   fastuidraw_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-  m_surface->blit_surface(GL_NEAREST);
 
+  m_show_surface = t_min(m_show_surface, (int)surfaces.size());
+  if (m_show_surface <= 0 || m_show_surface > surfaces.size())
+    {
+      m_surface->blit_surface(GL_NEAREST);
+    }
+  else
+    {
+      const gl::PainterSurfaceGL *S;
+      PainterSurface::Viewport src, dest;
+
+      src = m_surface->viewport();
+      S = dynamic_cast<const gl::PainterSurfaceGL*>(surfaces[m_show_surface - 1]);
+
+      dest.m_origin = src.m_origin;
+      dest.m_dimensions = ivec2(src.m_dimensions.x(), src.m_dimensions.y() / 2);
+      m_surface->blit_surface(src, dest, GL_LINEAR);
+
+      dest.m_origin.y() +=  dest.m_dimensions.y();
+      S->blit_surface(src, dest, GL_LINEAR);
+    }
+
+  if (m_last_shown_surface != m_show_surface)
+    {
+      if (m_show_surface > 0)
+        {
+          std::cout << "Show offscreen surface: " << m_show_surface - 1 << "\n";
+        }
+      else
+        {
+          std::cout << "Don't show offscreen surface\n";
+        }
+      m_last_shown_surface = m_show_surface;
+    }
   ++m_frame;
 }
 
@@ -685,7 +713,9 @@ handle_event(const SDL_Event &ev)
           if (m_cell_shared_state.m_stroke_width > 0.0f)
             {
               m_cell_shared_state.m_anti_alias_stroking = !m_cell_shared_state.m_anti_alias_stroking;
-              std::cout << "Stroking anti-aliasing = " << m_cell_shared_state.m_anti_alias_stroking << "\n";
+              std::cout << "Stroking anti-aliasing = "
+                        << m_cell_shared_state.m_anti_alias_stroking
+                        << "\n";
             }
           break;
         case SDLK_v:
@@ -713,19 +743,36 @@ handle_event(const SDL_Event &ev)
           std::cout << "Draw Image = " << m_cell_shared_state.m_draw_image << "\n";
           break;
         case SDLK_b:
-          if (ev.key.keysym.mod & KMOD_CTRL)
+          cycle_value(m_current_blend, ev.key.keysym.mod & (KMOD_SHIFT | KMOD_ALT | KMOD_CTRL), m_blend_labels.size());
+          std::cout << "Rect Blend mode set to: " << m_blend_labels[m_current_blend].second << "\n";
+          m_cell_shared_state.m_rect_blend_mode = m_blend_labels[m_current_blend].first;
+          break;
+        case SDLK_y:
+          m_cell_shared_state.m_draw_transparent = !m_cell_shared_state.m_draw_transparent;
+          if (m_cell_shared_state.m_draw_transparent)
             {
-              cycle_value(m_current_blend, ev.key.keysym.mod & (KMOD_SHIFT | KMOD_ALT), m_blend_labels.size());
-              std::cout << "Rect Blend mode set to: " << m_blend_labels[m_current_blend].second << "\n";
-              m_cell_shared_state.m_rect_blend_mode = m_blend_labels[m_current_blend].first;
+              std::cout << "Draw cells transparently\n";
             }
           else
             {
-              cycle_value(m_current_composite, ev.key.keysym.mod & (KMOD_SHIFT | KMOD_ALT), m_composite_labels.size());
-              std::cout << "Rect Composite mode set to: " << m_composite_labels[m_current_composite].second << "\n";
-              m_cell_shared_state.m_rect_composite_mode = m_composite_labels[m_current_composite].first;
+              std::cout << "Draw cells opaquely\n";
             }
           break;
+
+        case SDLK_o:
+          if (ev.key.keysym.mod & (KMOD_SHIFT | KMOD_ALT))
+            {
+              if (m_show_surface > 0)
+                {
+                  --m_show_surface;
+                }
+            }
+          else
+            {
+              ++m_show_surface;
+            }
+          break;
+
         case SDLK_0:
           m_zoomer.transformation(ScaleTranslate<float>());
           break;

@@ -51,9 +51,9 @@ generate_children_in_group(const reference_counted_ptr<Painter> &painter,
                            CellGroup *g, int &J,
                            const ivec2 &xy,
                            int count_x, int count_y,
-                           std::vector<PainterPackedValue<PainterBrush> > &txt,
-                           std::vector<PainterPackedValue<PainterBrush> > &bg,
-                           std::vector<PainterPackedValue<PainterBrush> > &im)
+                           std::vector<PainterData::brush_value > &txt,
+                           std::vector<PainterData::brush_value > &bg,
+                           std::vector<PainterData::brush_value > &im)
 {
   g->m_bb_min = (vec2(xy) ) * m_cell_sz;
   g->m_bb_max = (vec2(xy) + vec2(count_x, count_y) ) * m_cell_sz;
@@ -123,19 +123,19 @@ generate_children_in_group(const reference_counted_ptr<Painter> &painter,
               bgJ = J % bg.size();
               imJ = J % im.size();
 
-              if (!txt[txtJ])
+              if (!txt[txtJ].packed())
                 {
                   PainterBrush brush(m_params.m_text_colors[txtJ]);
-                  txt[txtJ] = painter->packed_value_pool().create_packed_value(brush);
+                  txt[txtJ] = painter->packed_value_pool().create_packed_brush(brush);
                 }
 
-              if (!bg[bgJ])
+              if (!bg[bgJ].packed())
                 {
                   PainterBrush brush(m_params.m_background_colors[bgJ]);
-                  bg[bgJ] = painter->packed_value_pool().create_packed_value(brush);
+                  bg[bgJ] = painter->packed_value_pool().create_packed_brush(brush);
                 }
 
-              if (!im[imJ])
+              if (!im[imJ].packed())
                 {
                   int image, color;
 
@@ -147,11 +147,11 @@ generate_children_in_group(const reference_counted_ptr<Painter> &painter,
                     {
                       brush.image(m_params.m_images[image].first,
                                   m_params.m_image_filter,
-                                  m_params.m_image_mipmap_level);
+                                  m_params.m_image_mipmapping);
                     }
 
-                  brush.pen(m_params.m_rect_colors[color]);
-                  im[imJ] = painter->packed_value_pool().create_packed_value(brush);
+                  brush.color(m_params.m_rect_colors[color]);
+                  im[imJ] = painter->packed_value_pool().create_packed_brush(brush);
                 }
 
               CellParams params;
@@ -160,11 +160,12 @@ generate_children_in_group(const reference_counted_ptr<Painter> &painter,
               params.m_font = m_params.m_font;
               params.m_background_brush = bg[bgJ];
               params.m_image_brush = im[imJ];
+              params.m_image = m_params.m_images[imJ % m_params.m_images.size()].first.get();
               params.m_text_brush = txt[txtJ];
               params.m_text = m_params.m_texts[J % m_params.m_texts.size()];
               params.m_pixels_per_ms = random_value(m_params.m_min_speed, m_params.m_max_speed) / 1000.0f;
               params.m_degrees_per_s = (int)random_value(m_params.m_min_degrees_per_s, m_params.m_max_degrees_per_s);
-	      params.m_pixel_size = m_params.m_pixel_size;
+              params.m_pixel_size = m_params.m_pixel_size;
               params.m_size = m_cell_sz;
               params.m_table_pos = ivec2(x, y) + xy;
               if (m_params.m_draw_image_name)
@@ -196,7 +197,7 @@ paint_pre_children(const reference_counted_ptr<Painter> &painter)
     {
       vec2 cell_loc;
       int x, y, J;
-      std::vector<PainterPackedValue<PainterBrush> > txt, bg, im;
+      std::vector<PainterData::brush_value > txt, bg, im;
 
       txt.resize(m_params.m_text_colors.size());
       bg.resize(m_params.m_background_colors.size());
@@ -210,11 +211,11 @@ paint_pre_children(const reference_counted_ptr<Painter> &painter)
                                     << Path::contour_close();
 
 
-      m_outline_path << vec2(0.0f, 0.0f)
-                     << vec2(m_params.m_wh.x(), 0.0f)
-                     << vec2(m_params.m_wh.x(), m_params.m_wh.y())
-                     << vec2(0.0f, m_params.m_wh.y())
-                     << Path::contour_close();
+      m_grid_path << vec2(0.0f, 0.0f)
+                  << vec2(m_params.m_wh.x(), 0.0f)
+                  << vec2(m_params.m_wh.x(), m_params.m_wh.y())
+                  << vec2(0.0f, m_params.m_wh.y())
+                  << Path::contour_close();
 
       for(x = 1, cell_loc.x() = m_cell_sz.x(); x < m_params.m_cell_count.x(); ++x, cell_loc.x() += m_cell_sz.x())
         {
@@ -229,7 +230,7 @@ paint_pre_children(const reference_counted_ptr<Painter> &painter)
                       << vec2(m_params.m_wh.x(), cell_loc.y());
         }
 
-      m_line_brush = painter->packed_value_pool().create_packed_value(m_params.m_line_color);
+      m_line_brush = painter->packed_value_pool().create_packed_brush(m_params.m_line_color);
 
       J = 0;
       generate_children_in_group(painter, this, J, ivec2(0, 0),
@@ -269,7 +270,7 @@ paint_pre_children(const reference_counted_ptr<Painter> &painter)
     }
 
   m_rotation_radians =
-    static_cast<float>(M_PI) * static_cast<float>(m_thousandths_degrees_rotation) / (1000.0f * 180.0f);
+    static_cast<float>(FASTUIDRAW_PI) * static_cast<float>(m_thousandths_degrees_rotation) / (1000.0f * 180.0f);
 }
 
 void
@@ -322,25 +323,15 @@ paint_post_children(const reference_counted_ptr<Painter> &painter)
   if (!m_params.m_cell_state->m_rotating && m_params.m_cell_state->m_stroke_width > 0.0f)
     {
       PainterStrokeParams st;
-      enum Painter::shader_anti_alias_t aa_mode;
 
       st.miter_limit(-1.0f);
       st.width(m_params.m_cell_state->m_stroke_width);
-      aa_mode = (m_params.m_cell_state->m_anti_alias_stroking) ?
-        Painter::shader_anti_alias_auto :
-        Painter::shader_anti_alias_none;
-
-      painter->stroke_path(PainterData(m_line_brush, &st),
-                           m_outline_path,
-                           StrokingStyle()
-                           .join_style(Painter::rounded_joins),
-                           aa_mode);
 
       painter->stroke_path(PainterData(m_line_brush, &st),
                            m_grid_path,
                            StrokingStyle()
                            .cap_style(Painter::flat_caps)
-                           .join_style(Painter::no_joins),
-                           aa_mode);
+                           .join_style(Painter::rounded_joins),
+                           m_params.m_cell_state->m_anti_alias_stroking);
     }
 }

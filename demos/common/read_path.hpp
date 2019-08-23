@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FASTUIDRAW_DEMO_READ_PATH_HPP
+#define FASTUIDRAW_DEMO_READ_PATH_HPP
 
 #include <string>
 #include <fastuidraw/path.hpp>
@@ -16,4 +17,7 @@
    value0 value1 marks a coordinate (control point of edge point)
  */
 void
-read_path(fastuidraw::Path &path, const std::string &source);
+read_path(fastuidraw::Path &path, const std::string &source,
+          std::string *dst_cpp_code = nullptr);
+
+#endif

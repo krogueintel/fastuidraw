@@ -13,13 +13,12 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-#pragma once
-
-#include <iterator>
+#ifndef FASTUIDRAW_VECN_HPP
+#define FASTUIDRAW_VECN_HPP
 
 #include <fastuidraw/util/util.hpp>
 #include <fastuidraw/util/math.hpp>
@@ -37,13 +36,12 @@ namespace fastuidraw
  * index checking and STL style iterators via pointer iterators.
  *
  * \param T typename with a constructor that takes no arguments.
- * \param N unsigned integer size of array
+ * \param N size of array
  */
 template<typename T, size_t N>
 class vecN
 {
 public:
-
   enum
     {
       /*!
@@ -105,18 +103,6 @@ public:
    * iterator typedef to const_pointer
    */
   typedef const_pointer const_iterator;
-
-  /*!
-   * \brief
-   * iterator typedef using std::reverse_iterator.
-   */
-  typedef std::reverse_iterator<const_iterator>  const_reverse_iterator;
-
-  /*!
-   * \brief
-   * iterator typedef using std::reverse_iterator
-   */
-  typedef std::reverse_iterator<iterator>        reverse_iterator;
 
   /*!
    * Ctor, no intiliaztion on POD types.
@@ -386,12 +372,25 @@ public:
    */
   vecN(const vecN<T, N-1> &p, const T &d)
   {
-    FASTUIDRAWstatic_assert(N>1);
-    for(size_type i=0;i<N-1;++i)
+    FASTUIDRAWstatic_assert(N > 1);
+    for(size_type i = 0 ; i < N - 1; ++i)
       {
         operator[](i) = p[i];
       }
     operator[](N - 1) = d;
+  }
+
+  /*!
+   * Swap operation
+   * \param obj object with which to swap
+   */
+  void
+  swap(vecN &obj)
+  {
+    for(size_type i = 0; i < N; ++i)
+      {
+        m_data[i].swap(obj.m_data[i]);
+      }
   }
 
   /*!
@@ -514,7 +513,7 @@ public:
    * \param obj Value to set all objects as.
    */
   const vecN&
-  Set(const T &obj)
+  fill(const T &obj)
   {
     for(size_type i = 0; i < N; ++i)
       {
@@ -988,7 +987,7 @@ public:
    * Normalize this vecN up to a tolerance,
    * equivalent to
    * \code
-   * operator/=t_sqrt(t_max(tol, magnitudeSq()))
+   * operator/=(t_sqrt(t_max(tol, magnitudeSq())))
    * \endcode
    * \param tol tolerance to avoid dividing by too small values
    */
@@ -1019,7 +1018,7 @@ public:
    * by calling normalize(void).
    */
   vecN
-  normal_vector(void) const
+  unit_vector(void) const
   {
     vecN retval(*this);
     retval.normalize();
@@ -1031,7 +1030,7 @@ public:
    * by calling normalize(T).
    */
   vecN
-  normal_vector(T tol) const
+  unit_vector(T tol) const
   {
     vecN retval(*this);
     retval.normalize(tol);
@@ -1085,30 +1084,6 @@ public:
   end(void) const { return const_iterator(c_ptr() + static_cast<difference_type>(size()) ); }
 
   /*!
-   * STL compliant iterator function.
-   */
-  reverse_iterator
-  rbegin(void) { return reverse_iterator(end()); }
-
-  /*!
-   * STL compliant iterator function.
-   */
-  const_reverse_iterator
-  rbegin(void) const { return const_reverse_iterator(end()); }
-
-  /*!
-   * STL compliant iterator function.
-   */
-  reverse_iterator
-  rend(void) { return reverse_iterator(begin()); }
-
-  /*!
-   * STL compliant iterator function.
-   */
-  const_reverse_iterator
-  rend(void) const { return const_reverse_iterator(begin()); }
-
-  /*!
    * STL compliant back() function.
    */
   reference
@@ -1135,7 +1110,6 @@ public:
 private:
   T m_data[N];
 };
-
 
 /*!
  * conveniance function, equivalent to
@@ -1197,6 +1171,55 @@ magnitude_compare(const vecN<T, N> &a,
 {
   return a.magnitudeSq()<b.magnitudeSq();
 }
+
+  /*!
+   * unvecN extracts from a type T \ref vecN::array_size
+   * and \ref vecN::value_type if T is a vecN<S, N> for
+   * some type S and N.
+   */
+  template<typename T>
+  class unvecN
+  {
+  public:
+    enum
+      {
+        /*!
+         * If T is the type vecN<S, N> for some type S,
+         * then is the value of N, otherwise is 1.
+         */
+        array_size = 1,
+      };
+
+    /*!
+     * If T is the type vecN<S, N> for some type S,
+     * then is the type S, otherwise is the type T.
+     */
+    typedef T type;
+  };
+
+  ///@cond
+  template<typename T, size_t N>
+  class unvecN<vecN<T, N> >
+  {
+  public:
+    enum
+      {
+        array_size = N,
+      };
+    typedef T type;
+  };
+
+  template<typename T, size_t N>
+  class unvecN<vecN<T, N> const >
+  {
+  public:
+    enum
+      {
+        array_size = N,
+      };
+    typedef T const type;
+  };
+  ///@endcond
 
   /*!
    * Conveniance typedef
@@ -1403,7 +1426,7 @@ magnitude_compare(const vecN<T, N> &a,
   typedef vecN<uint64_t, 4> u64vec4;
 
 /*!
- * Pack 4 float values into a vecN<uint32_t, 4>
+ * Pack 4 float values into a uvec4
  * values via pack_float().
  * \param x x-value
  * \param y y-value
@@ -1420,6 +1443,18 @@ pack_vec4(float x, float y, float z, float w)
   return_value.z() = pack_float(z);
   return_value.w() = pack_float(w);
   return return_value;
+}
+
+/*!
+ * Pack a \ref vec4 into a uvec4
+ * values via pack_float().
+ * \param v value to pack
+ */
+inline
+uvec4
+pack_vec4(const vec4 &v)
+{
+  return pack_vec4(v[0], v[1], v[2], v[3]);
 }
 
   /*!
@@ -1439,6 +1474,20 @@ pack_vec4(float x, float y, float z, float w)
     return t_sqrt(d * (d - d0) * (d - d1) * (d - d2));
   }
 
+  /*!
+   * Compute the cross produces of two vectors
+   */
+  template<typename T>
+  vecN<T, 3>
+  cross_product(const vecN<T, 3> &a, const vecN<T, 3> &b)
+  {
+    return vecN<T, 3>(a.y() * b.z() - a.z() * b.y(),
+                      a.z() * b.x() - a.x() * b.z(),
+                      a.x() * b.y() - a.y() * b.x());
+  }
+
 /*! @} */
 
 } //namespace
+
+#endif

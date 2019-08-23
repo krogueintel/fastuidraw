@@ -103,7 +103,7 @@ namespace
    * the loading of data until the first time the data
    * is requested.
    */
-  class DataBufferLoader:public fastuidraw::reference_counted<DataBufferLoader>::default_base
+  class DataBufferLoader:public fastuidraw::reference_counted<DataBufferLoader>::concurrent
   {
   public:
     explicit
@@ -287,7 +287,7 @@ generate(unsigned int num_threads,
          fastuidraw::GlyphRenderer r,
          fastuidraw::reference_counted_ptr<const fastuidraw::FontBase> f,
          std::vector<fastuidraw::Glyph> &dst,
-         fastuidraw::reference_counted_ptr<fastuidraw::GlyphCache> glyph_cache,
+         fastuidraw::GlyphCache &glyph_cache,
          std::vector<int> &cnts)
 {
   GlyphSetGenerator generator(r, f, dst);
@@ -313,18 +313,15 @@ generate(unsigned int num_threads,
         }
     }
 
-  if (glyph_cache)
+  for(fastuidraw::Glyph glyph : dst)
     {
-      for(fastuidraw::Glyph glyph : dst)
+      if (glyph.valid())
         {
-          if (glyph.valid())
-            {
-              enum fastuidraw::return_code R;
+          enum fastuidraw::return_code R;
 
-              R = glyph_cache->add_glyph(glyph, false);
-              FASTUIDRAWassert(R == fastuidraw::routine_success);
-              FASTUIDRAWunused(R);
-            }
+          R = glyph_cache.add_glyph(glyph, false);
+          FASTUIDRAWassert(R == fastuidraw::routine_success);
+          FASTUIDRAWunused(R);
         }
     }
 }
@@ -334,22 +331,24 @@ generate(unsigned int num_threads,
 void
 create_formatted_text(fastuidraw::GlyphSequence &out_sequence,
                       const std::vector<uint32_t> &glyph_codes,
-                      fastuidraw::reference_counted_ptr<const fastuidraw::FontBase> font,
+                      const fastuidraw::FontBase *font,
                       const fastuidraw::vec2 &shift_by)
 {
   fastuidraw::vec2 pen(shift_by);
-  float pixel_size(out_sequence.pixel_size());
-  enum fastuidraw::Painter::screen_orientation orientation(out_sequence.orientation());
+  float format_size(out_sequence.format_size());
   fastuidraw::GlyphMetrics layout;
   float ratio;
 
   for(uint32_t glyph_code : glyph_codes)
     {
-      layout = out_sequence.glyph_cache()->fetch_glyph_metrics(font, glyph_code);
-      out_sequence.add_glyph(fastuidraw::GlyphSource(glyph_code, font), pen);
+      layout = out_sequence.glyph_cache().fetch_glyph_metrics(font, glyph_code);
+      if (layout.valid())
+        {
+          out_sequence.add_glyph(fastuidraw::GlyphSource(glyph_code, font), pen);
 
-      ratio = pixel_size / layout.units_per_EM();
-      pen.x() += ratio * layout.advance().x();
+          ratio = format_size / layout.units_per_EM();
+          pen.x() += ratio * layout.advance().x();
+        }
     }
 }
 
@@ -357,24 +356,27 @@ template<typename T>
 static
 void
 create_formatted_textT(T &out_sequence,
+                       enum fastuidraw::Painter::screen_orientation orientation,
                        std::istream &istr,
-                       fastuidraw::reference_counted_ptr<const fastuidraw::FontBase> font,
+                       const fastuidraw::FontBase *font,
                        fastuidraw::reference_counted_ptr<fastuidraw::FontDatabase> font_database,
                        const fastuidraw::vec2 &starting_place)
 {
   std::streampos current_position, end_position;
-  float pixel_size(out_sequence.pixel_size());
-  enum fastuidraw::Painter::screen_orientation orientation(out_sequence.orientation());
+  float format_size(out_sequence.format_size());
   unsigned int loc(0);
   fastuidraw::vec2 pen(starting_place);
   std::string line, original_line;
-  float last_negative_tallest(0.0f);
   bool first_line(true);
+  float pen_y_advance, ratio;
 
   current_position = istr.tellg();
   istr.seekg(0, std::ios::end);
   end_position = istr.tellg();
   istr.seekg(current_position, std::ios::beg);
+
+  ratio = format_size / font->metrics().units_per_EM();
+  pen_y_advance = ratio * font->metrics().height();
 
   std::vector<fastuidraw::GlyphSource> glyph_sources;
   std::vector<fastuidraw::vec2> sub_p;
@@ -384,13 +386,9 @@ create_formatted_textT(T &out_sequence,
     {
       fastuidraw::c_array<uint32_t> sub_ch;
       fastuidraw::c_array<fastuidraw::range_type<float> > sub_extents;
-      float tallest, negative_tallest, offset;
       bool empty_line;
-      float pen_y_advance;
 
       empty_line = true;
-      tallest = 0.0f;
-      negative_tallest = 0.0f;
 
       original_line = line;
       preprocess_text(line);
@@ -400,63 +398,28 @@ create_formatted_textT(T &out_sequence,
       metrics.resize(line.length());
 
       font_database->create_glyph_sequence(font, line.begin(), line.end(), glyph_sources.begin());
-      out_sequence.glyph_cache()->fetch_glyph_metrics(cast_c_array(glyph_sources), cast_c_array(metrics));
+      out_sequence.glyph_cache().fetch_glyph_metrics(cast_c_array(glyph_sources), cast_c_array(metrics));
       for(unsigned int i = 0, endi = glyph_sources.size(); i < endi; ++i)
         {
           sub_p[i] = pen;
           if (glyph_sources[i].m_font)
             {
-              float ratio;
-
-              ratio = pixel_size / metrics[i].units_per_EM();
-
               empty_line = false;
               pen.x() += ratio * metrics[i].advance().x();
-
-              tallest = std::max(tallest, ratio * (metrics[i].horizontal_layout_offset().y() + metrics[i].size().y()));
-              negative_tallest = std::min(negative_tallest, ratio * metrics[i].horizontal_layout_offset().y());
             }
-        }
-
-      if (empty_line)
-        {
-          pen_y_advance = pixel_size + 1.0f;
-          offset = 0.0f;
-        }
-      else
-        {
-          if (orientation == fastuidraw::Painter::y_increases_downwards)
-            {
-              float v;
-
-              v = tallest - last_negative_tallest;
-              offset = (first_line) ? 0 : v;
-              pen_y_advance = (first_line) ? 0 : v;
-            }
-          else
-            {
-              pen_y_advance = tallest - negative_tallest;
-              offset = (first_line) ? 0 : -negative_tallest;
-            }
-        }
-
-      for(unsigned int i = 0; i < sub_p.size(); ++i)
-        {
-          sub_p[i].y() += offset;
         }
 
       if (orientation == fastuidraw::Painter::y_increases_downwards)
         {
-          pen.y() += pen_y_advance + 1.0f;
+          pen.y() += pen_y_advance;
         }
       else
         {
-          pen.y() -= pen_y_advance + 1.0f;
+          pen.y() -= pen_y_advance;
         }
 
       pen.x() = starting_place.x();
       loc += line.length();
-      last_negative_tallest = negative_tallest;
       first_line = false;
 
       out_sequence.add_glyphs(const_cast_c_array(glyph_sources),
@@ -466,22 +429,24 @@ create_formatted_textT(T &out_sequence,
 
 void
 create_formatted_text(fastuidraw::GlyphSequence &out_sequence,
+                      enum fastuidraw::Painter::screen_orientation orientation,
                       std::istream &istr,
-                      fastuidraw::reference_counted_ptr<const fastuidraw::FontBase> font,
+                      const fastuidraw::FontBase *font,
                       fastuidraw::reference_counted_ptr<fastuidraw::FontDatabase> font_database,
                       const fastuidraw::vec2 &starting_place)
 {
-  create_formatted_textT(out_sequence, istr, font, font_database, starting_place);
+  create_formatted_textT(out_sequence, orientation, istr, font, font_database, starting_place);
 }
 
 void
 create_formatted_text(fastuidraw::GlyphRun &out_sequence,
+                      enum fastuidraw::Painter::screen_orientation orientation,
                       std::istream &istr,
-                      fastuidraw::reference_counted_ptr<const fastuidraw::FontBase> font,
+                      const fastuidraw::FontBase *font,
                       fastuidraw::reference_counted_ptr<fastuidraw::FontDatabase> font_database,
                       const fastuidraw::vec2 &starting_place)
 {
-  create_formatted_textT(out_sequence, istr, font, font_database, starting_place);
+  create_formatted_textT(out_sequence, orientation, istr, font, font_database, starting_place);
 }
 
 void
@@ -525,6 +490,10 @@ default_font(void)
     {
       return "C:/Windows/Fonts/arial.ttf";
     }
+  #elif defined(__APPLE__)
+    {
+      return "/Library/Fonts/Arial.ttf";
+    }
   #else
     {
       return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
@@ -538,6 +507,10 @@ default_font_path(void)
   #ifdef _WIN32
     {
       return "C:/Windows/Fonts";
+    }
+  #elif defined(__APPLE__)
+    {
+      return "/Library/Fonts/";
     }
   #else
     {
@@ -560,7 +533,7 @@ add_fonts_from_font_config(fastuidraw::reference_counted_ptr<fastuidraw::FreeTyp
 
       object_set = FcObjectSetBuild(FC_FOUNDRY, FC_FAMILY, FC_STYLE, FC_WEIGHT,
                                     FC_SLANT, FC_SCALABLE, FC_FILE, FC_INDEX,
-                                    nullptr);
+                                    FC_LANG, nullptr);
       pattern = FcPatternCreate();
       FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
       font_set = FcFontList(config, pattern, object_set);
@@ -617,6 +590,7 @@ select_font_font_config(int weight, int slant,
                         fastuidraw::c_string style,
                         fastuidraw::c_string family,
                         fastuidraw::c_string foundry,
+                        const std::set<std::string> &langs,
                         fastuidraw::reference_counted_ptr<fastuidraw::FreeTypeLib> lib,
                         fastuidraw::reference_counted_ptr<fastuidraw::FontDatabase> font_database)
 {
@@ -624,6 +598,7 @@ select_font_font_config(int weight, int slant,
     {
       FcConfig *config = FontConfig::get();
       FcPattern* pattern;
+      FcLangSet* lang_set(nullptr);
 
       pattern = FcPatternCreate();
       if (weight >= 0)
@@ -650,6 +625,21 @@ select_font_font_config(int weight, int slant,
         {
           FcPatternAddString(pattern, FC_FOUNDRY, (const FcChar8*)foundry);
         }
+
+      for (const std::string &lang : langs)
+        {
+          if (!lang_set)
+            {
+              lang_set = FcLangSetCreate();
+            }
+          FcLangSetAdd(lang_set, (const FcChar8*)lang.c_str());
+        }
+
+      if (lang_set)
+        {
+          FcPatternAddLangSet(pattern, FC_LANG, lang_set);
+        }
+
       FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
 
       FcConfigSubstitute(config, pattern, FcMatchPattern);
@@ -684,6 +674,10 @@ select_font_font_config(int weight, int slant,
           FcPatternDestroy(font_pattern);
         }
       FcPatternDestroy(pattern);
+      if (lang_set)
+        {
+          FcLangSetDestroy(lang_set);
+        }
       return font;
     }
   #else

@@ -7,9 +7,6 @@ d		:= $(dir)
 dir := $(d)/common
 include $(dir)/Rules.mk
 
-dir := $(d)/atlas_tests
-include $(dir)/Rules.mk
-
 dir := $(d)/painter_test
 include $(dir)/Rules.mk
 
@@ -31,7 +28,11 @@ include $(dir)/Rules.mk
 dir := $(d)/painter_simple_test
 include $(dir)/Rules.mk
 
+dir := $(d)/painter_custom_brush_test
+include $(dir)/Rules.mk
 
+dir := $(d)/tutorial
+include $(dir)/Rules.mk
 
 # Begin standard footer
 d		:= $(dirstack_$(sp))

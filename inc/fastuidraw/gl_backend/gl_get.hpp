@@ -13,12 +13,13 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_GL_GET_HPP
+#define FASTUIDRAW_GL_GET_HPP
 
 
 #include <fastuidraw/gl_backend/gl_header.hpp>
@@ -109,3 +110,5 @@ context_get(GLenum value)
 
 } //namespace gl
 } //namespace fastuidraw
+
+#endif

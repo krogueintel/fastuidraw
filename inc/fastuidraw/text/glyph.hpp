@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_GLYPH_HPP
+#define FASTUIDRAW_GLYPH_HPP
 
 #include <fastuidraw/util/reference_counted.hpp>
 #include <fastuidraw/util/util.hpp>
@@ -27,12 +28,12 @@
 #include <fastuidraw/text/glyph_attribute.hpp>
 #include <fastuidraw/text/glyph_metrics.hpp>
 #include <fastuidraw/text/glyph_render_data.hpp>
-#include <fastuidraw/painter/painter_attribute.hpp>
 #include <fastuidraw/painter/painter_enums.hpp>
+#include <fastuidraw/painter/attribute_data/painter_attribute.hpp>
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
 
@@ -82,10 +83,10 @@ namespace fastuidraw
     renderer(void) const;
 
     /*!
-     * Returne ths rendering size of the glpyh (in
+     * Returns ths rendering size of the glyph (in
      * font coordinates). This value is similair in
-     * value to GlyphMetrics:size() but not necesaarily
-     * idential (differnces come from discreitzation to
+     * value to GlyphMetrics:size() but not necessarily
+     * idential (differnces come from discretization to
      * pixels for example).
      */
     vec2
@@ -108,10 +109,10 @@ namespace fastuidraw
     /*!
      * Returns the GlyphCache on which the glyph
      * resides. The return value of valid() must be
-     * true. If not, debug builds FASTUIDRAWassert and release
-     * builds crash.
+     * true. If not, debug builds FASTUIDRAWassert
+     * and release builds crash.
      */
-    reference_counted_ptr<GlyphCache>
+    GlyphCache*
     cache(void) const;
 
     /*!
@@ -182,37 +183,38 @@ namespace fastuidraw
     delete_glyph(Glyph G);
 
     /*!
-     * Pack a single glyph into attribute and index data. A
-     * single glyph takes exactly 4 attributes and 6 indices.
-     * The data is packed as follows:
-     *   - PainterAttribute::m_attrib0 .xy -> position in item coordinates of the
-     *                                        vertex of the quad to draw the glyph (float)
-     *   - PainterAttribute::m_attrib0 .zw -> the difference in item coordinates
-     *                                        between the bottom-left vertex position
-     *                                        and the top-right vertex position.
-     *   - PainterAttribute::m_attrib1 .x  -> Glyph::attribute()[0]
-     *   - PainterAttribute::m_attrib1 .y  -> Glyph::attribute()[1]
-     *   - PainterAttribute::m_attrib1. z  -> Glyph::attribute()[2]
-     *   - PainterAttribute::m_attrib1 .w  -> Glyph::attribute()[3]
-     *   - PainterAttribute::m_attrib2 .x  -> Glyph::attribute()[4]
-     *   - PainterAttribute::m_attrib2 .y  -> Glyph::attribute()[5]
-     *   - PainterAttribute::m_attrib2 .z  -> Glyph::attribute()[6]
-     *   - PainterAttribute::m_attrib2 .w  -> Glyph::attribute()[7]
-     * \param attrib_loc index into dst_attrib to which to write data
-     * \param dst_attrib location to which to pack attributes
-     * \param index_loc index into dst_index to which to write data
-     * \param dst_index location to which to pack indices
-     * \param position position of the bottom left corner of the glyph
-     * \param scale_factor scale factor to apply to the glyph
-     * \param orientation orientation of drawing the glyph
-     * \param layout if glyph position is for horizontal or vertical layout
+     * Given an index into an array of \ref GlyphAttribute values,
+     * as used by pack_raw() or returned by \ref attributes()),
+     * return the point to member variable of which attribute is
+     * written to from the glyph attribute value and what component
+     * of it.
+     * \param glyph_attribute_index into an array of \ref GlyphAttribute
+     *                              values, for example the array returned
+     *                              by \ref attributes().
+     * \param out_attribute location to which to write the pointer
+     *                      member of \ref PainterAttribute that
+     *                      the glyph attribute value is written to
+     *                      in pack_raw() and/or pack_glyph().
+     * \param out_index_into_attribute location to which to write the
+     *                                 array-index element of the
+     *                                 member of \ref PainterAttribute
+     *                                 that the glyph attribute value
+     *                                 is written to in pack_raw()
+     *                                 and/or pack_glyph().
      */
+    static
     void
-    pack_glyph(unsigned int attrib_loc, c_array<PainterAttribute> dst_attrib,
-               unsigned int index_loc, c_array<PainterIndex> dst_index,
-               const vec2 position, float scale_factor,
-               enum fastuidraw::PainterEnums::screen_orientation orientation,
-               enum fastuidraw::PainterEnums::glyph_layout_type layout) const;
+    glyph_attribute_dst_write(int glyph_attribute_index,
+                              PainterAttribute::pointer_to_field *out_attribute,
+                              int *out_index_into_attribute);
+
+    /*!
+     * Provides information on the rendering cost of the Glyph,
+     * entirely dependent on the \ref GlyphRenderData that generated
+     * the data.
+     */
+    c_array<const GlyphRenderCostInfo>
+    render_cost(void) const;
 
   private:
     friend class GlyphCache;
@@ -226,3 +228,5 @@ namespace fastuidraw
   };
 /*! @} */
 }
+
+#endif

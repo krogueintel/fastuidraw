@@ -13,14 +13,15 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
 
 
-#pragma once
+#ifndef FASTUIDRAW_DEMO_SCALETRANSLATE_HPP
+#define FASTUIDRAW_DEMO_SCALETRANSLATE_HPP
 
 #include <cstdlib>
 #include <fastuidraw/util/util.hpp>
@@ -243,3 +244,5 @@ operator*(const ScaleTranslate<T> &a, const ScaleTranslate<T> &b)
 }
 
 /*! @} */
+
+#endif

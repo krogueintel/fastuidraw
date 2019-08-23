@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FASTUIDRAW_DEMO_CELL_HPP
+#define FASTUIDRAW_DEMO_CELL_HPP
 
 #include <fastuidraw/text/font_database.hpp>
 #include <fastuidraw/text/glyph_cache.hpp>
@@ -23,8 +24,8 @@ public:
     m_pause(false),
     m_anti_alias_stroking(true),
     m_cells_drawn(0),
-    m_rect_composite_mode(Painter::composite_porter_duff_src_over),
-    m_rect_blend_mode(Painter::blend_w3c_normal)
+    m_draw_transparent(false),
+    m_rect_blend_mode(Painter::blend_porter_duff_src_over)
   {}
 
   bool m_draw_text;
@@ -33,11 +34,11 @@ public:
   Path m_path;
   float m_stroke_width;
   bool m_pause;
+  bool m_draw_transparent;
   bool m_anti_alias_stroking;
 
   int m_cells_drawn;
-  enum Painter::composite_mode_t m_rect_composite_mode;
-  enum Painter::blend_w3c_mode_t m_rect_blend_mode;
+  enum Painter::blend_mode_t m_rect_blend_mode;
   enum glyph_type m_glyph_render;
 };
 
@@ -47,10 +48,12 @@ public:
   reference_counted_ptr<FontDatabase> m_font_database;
   reference_counted_ptr<GlyphCache> m_glyph_cache;
   reference_counted_ptr<const FontBase> m_font;
-  PainterPackedValue<PainterBrush> m_background_brush;
-  PainterPackedValue<PainterBrush> m_image_brush;
-  PainterPackedValue<PainterBrush> m_text_brush;
-  PainterPackedValue<PainterBrush> m_line_brush;
+  PainterData::brush_value m_background_brush;
+  PainterData::brush_value m_image_brush;
+  PainterData::brush_value m_text_brush;
+  PainterData::brush_value m_line_brush;
+  const Image *m_image;
+  ivec2 m_rect_dims;
   std::string m_text;
   std::string m_image_name;
   vec2 m_pixels_per_ms;
@@ -86,14 +89,15 @@ private:
   int m_thousandths_degrees_cell_rotation;
 
   vec2 m_table_pos;
+  vec2 m_rect_dims;
 
   vec2 m_pixels_per_ms;
   int m_degrees_per_s;
 
-  PainterPackedValue<PainterBrush> m_background_brush;
-  PainterPackedValue<PainterBrush> m_image_brush;
-  PainterPackedValue<PainterBrush> m_text_brush;
-  PainterPackedValue<PainterBrush> m_line_brush;
+  PainterData::brush_value m_background_brush;
+  PainterData::brush_value m_image_brush;
+  PainterData::brush_value m_text_brush;
+  PainterData::brush_value m_line_brush;
 
   vec2 m_item_location;
   float m_item_rotation;
@@ -101,3 +105,5 @@ private:
   CellSharedState *m_shared_state;
   bool m_timer_based_animation;
 };
+
+#endif

@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,22 +12,37 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
+/*!\addtogroup GLSLFragCode
+ * @{
+ */
+
+///@cond
+
 /* must have the macro/function
  *
- *  FASTUIDRAW_RESTRICTED_RAYS_FETCH_DATA(X)
+ *  fastuidraw_fetch_glyph_data(X)
  *
  * that returns a single 32-bit uint value at index X of
  * a large array of 32-bit uint values storing the data
+ *
+ * and optionally define the macro/function
+ *
+ *  fastuidraw_fetch_glyph_data_fp16x2(X)
+ *
+ * the reads a single 32-bit uint value that is bit-casted
+ * to a (fp16, fp16) pair realized as a vec2. For example
+ * it can be defined as
+ * unpackHalf2x16(fastuidraw_fetch_glyph_data(X))
  */
 
 struct fastuidraw_restricted_rays_transformation
 {
   vec2 translation;
-  vec2 r_vector, jr_vector;
+  vec2 t_vector, jq_vector;
   float reference_location, orientation;
 };
 
@@ -83,6 +98,22 @@ fastuidraw_restricted_rays_update_distance(in float dist, in bool is_increment,
     }
 }
 
+bool
+fastuidraw_restricted_rays_is_increment(in vec2 p, in vec2 dp)
+{
+  float det;
+
+  /* The vector from the origin to the point is given by the point value, p.
+   * the direction of the curve is given by dp. When crossing the curve in the
+   * direction from the origin to p, the winding is incremented if the pair
+   * (p, dp) forms a 2x2 matrix that has positive determinant and decrements
+   * otherwise.
+   */
+  det = p.x * dp.y - p.y * dp.x;
+  return det > 0.0;
+}
+
+
 void
 fastuidraw_restricted_rays_update_distance(in vec2 p, in bool is_increment,
                                            inout fastuidraw_restricted_rays_distance_type nv)
@@ -97,15 +128,11 @@ void
 fastuidraw_restricted_rays_update_distance(in vec2 p, in vec2 dp,
                                            inout fastuidraw_restricted_rays_distance_type nv)
 {
-  float z;
-
-  z = p.x * dp.y - p.y * dp.x;
-  fastuidraw_restricted_rays_update_distance(p, z > 0.0, nv);
+  fastuidraw_restricted_rays_update_distance(p, fastuidraw_restricted_rays_is_increment(p, dp), nv);
 }
 
 uint
 fastuidaw_restricted_rays_compute_box(in vec2 p,
-                                      in vec2 bb_box_min, in vec2 bb_box_max,
                                       in uint data_location,
                                       out fastuidraw_restricted_rays_box_type box,
                                       out uint curve_list,
@@ -113,11 +140,11 @@ fastuidaw_restricted_rays_compute_box(in vec2 p,
 {
   uint v, offset;
 
-  box.min_point = bb_box_min;
-  box.max_point = bb_box_max;
+  box.min_point = vec2(-fastuidraw_restricted_rays_glyph_coord_value, -fastuidraw_restricted_rays_glyph_coord_value);
+  box.max_point = vec2(fastuidraw_restricted_rays_glyph_coord_value, fastuidraw_restricted_rays_glyph_coord_value);
 
   offset = data_location;
-  v = FASTUIDRAW_RESTRICTED_RAYS_FETCH_DATA(offset);
+  v = fastuidraw_fetch_glyph_data(offset);
 
   while((v & fastuidraw_restricted_rays_hierarchy_node_mask) != 0u)
     {
@@ -148,7 +175,7 @@ fastuidaw_restricted_rays_compute_box(in vec2 p,
                                        fastuidraw_restricted_rays_hierarchy_child_num_bits,
                                        v);
       offset += data_location;
-      v = FASTUIDRAW_RESTRICTED_RAYS_FETCH_DATA(offset);
+      v = fastuidraw_fetch_glyph_data(offset);
     }
 
   box.size = box.max_point - box.min_point;
@@ -163,24 +190,10 @@ fastuidaw_restricted_rays_compute_box(in vec2 p,
   return offset + 1u;
 }
 
-ivec2
+vec2
 fastuidraw_restricted_rays_unpack_point(in uint ptr)
 {
-  uint pt_packed;
-  uvec2 pt_u;
-  ivec2 pt_i;
-
-  pt_packed = FASTUIDRAW_RESTRICTED_RAYS_FETCH_DATA(ptr);
-
-  pt_u.x = FASTUIDRAW_EXTRACT_BITS(fastuidraw_restricted_rays_point_x_coordinate_bit0,
-                                   fastuidraw_restricted_rays_point_coordinate_num_bits,
-                                   pt_packed);
-  pt_u.y = FASTUIDRAW_EXTRACT_BITS(fastuidraw_restricted_rays_point_y_coordinate_bit0,
-                                   fastuidraw_restricted_rays_point_coordinate_num_bits,
-                                   pt_packed);
-  pt_i = ivec2(pt_u);
-
-  return pt_i;
+  return fastuidraw_fetch_glyph_data_fp16x2(ptr);
 }
 
 void
@@ -219,12 +232,24 @@ fastuidraw_restricted_rays_compute_transformation(in vec2 frag_point,
    *
    * the matrix J * K * J * Kinverse is given by
    *
-   * | -(cc + dd) * R   (ac + bd) * R |
-   * |  (ac + bd) * R  -(aa + bb) * R |
+   * | -(cc + dd) / R   (ac + bd) / R |
+   * |  (ac + bd) / R  -(aa + bb) / R |
    *
-   * where R is 1 / det(K). Since we are only looking for
-   * a vector whose pre-image on window coordinates is
-   * perpindicular to q, we can skip the divide by R.
+   * where R is det(K). Since we are only needing the
+   * direction of the vector t, we can skip the divide
+   * by R. Letting L be the above matrix, we set N to
+   * be the matrix
+   *
+   *  |  t.x  t.y |
+   *  | jq.x jq.y |
+   *
+   * where jq = (-q.y, q.x) and t = L * q. Finally,
+   * M is given by N scaled so that F*jq and F*t have
+   * unit L1-length, M*jq = (V, 0) with V > 0 and
+   * M is orientation preserving (this is required
+   * because if M reverses orientation the winding
+   * changes to the refernece point would then need
+   * to be negated).
    */
 
   vec2 q, top_row, bottom_row, em;
@@ -232,8 +257,8 @@ fastuidraw_restricted_rays_compute_transformation(in vec2 frag_point,
 
   tr.translation = frag_point;
   q = reference_point - frag_point;
-  tr.jr_vector.x = -q.y;
-  tr.jr_vector.y = q.x;
+  tr.jq_vector.x = -q.y;
+  tr.jq_vector.y = q.x;
 
   a = frag_point_dx.x;
   b = frag_point_dy.x;
@@ -244,14 +269,14 @@ fastuidraw_restricted_rays_compute_transformation(in vec2 frag_point,
   top_row.y = bottom_row.x = (a * c + b * d);
   bottom_row.y = -(a * a + b * b);
 
-  tr.r_vector.x = dot(top_row, q);
-  tr.r_vector.y = dot(bottom_row, q);
+  tr.t_vector.x = dot(top_row, q);
+  tr.t_vector.y = dot(bottom_row, q);
 
-  /* em represents the normalization so that the pre-image of r_vector
-   * and jr_vector in screen coordinates has length 1.
+  /* em represents the normalization so that the pre-image of t_vector
+   * and jq_vector in screen coordinates has length 1.
    */
-  em.x = abs(dot(tr.r_vector, frag_point_dx)) + abs(dot(tr.r_vector, frag_point_dy));
-  em.y = abs(dot(tr.jr_vector, frag_point_dx)) + abs(dot(tr.jr_vector, frag_point_dy));
+  em.x = abs(dot(tr.t_vector, frag_point_dx)) + abs(dot(tr.t_vector, frag_point_dy));
+  em.y = abs(dot(tr.jq_vector, frag_point_dx)) + abs(dot(tr.jq_vector, frag_point_dy));
 
   /* Prevent divide by zero. if em.x or em.y is very small, that means
    * that on screen the x (repsectively y) local coordinate axis is
@@ -263,30 +288,30 @@ fastuidraw_restricted_rays_compute_transformation(in vec2 frag_point,
   em.x = max(em.x, min_em);
   em.y = max(em.y, min_em);
 
-  tr.r_vector /= em.x;
-  tr.jr_vector /= em.y;
-  tr.reference_location = dot(tr.r_vector, q);
+  tr.t_vector /= em.x;
+  tr.jq_vector /= em.y;
+  tr.reference_location = dot(tr.t_vector, q);
 
   if (tr.reference_location < 0.0)
     {
       /* we need to send q to (V, 0) where
        * V is positive.
        */
-      tr.r_vector = -tr.r_vector;
+      tr.t_vector = -tr.t_vector;
       tr.reference_location = -tr.reference_location;
     }
 
   float det;
 
-  det = (tr.r_vector.x * tr.jr_vector.y - tr.r_vector.y * tr.jr_vector.x);
+  det = (tr.t_vector.x * tr.jq_vector.y - tr.t_vector.y * tr.jq_vector.x);
   /* we need the transformation to be orientation preserving.
-   * The only requirement we have on jr_vector is that
-   * dot(jr_vector, q) is zero, so negate jr_vector to get the
+   * The only requirement we have on jq_vector is that
+   * dot(jq_vector, q) is zero, so negate jq_vector to get the
    * transformation matrix to be orientation preserving.
    */
   if (det < 0.0)
     {
-      tr.jr_vector = -tr.jr_vector;
+      tr.jq_vector = -tr.jq_vector;
     }
 }
 
@@ -295,8 +320,8 @@ fastuidraw_restricted_rays_apply_transformation(in vec2 p,
                                                 in fastuidraw_restricted_rays_transformation tr)
 {
   p -= tr.translation;
-  return vec2(dot(tr.r_vector, p),
-              dot(tr.jr_vector, p));
+  return vec2(dot(tr.t_vector, p),
+              dot(tr.jq_vector, p));
 }
 
 uint
@@ -304,6 +329,19 @@ fastuidraw_restricted_rays_compute_code(in float y1, in float y2, in float y3)
 {
   uint code;
 
+  /* The purpose of the algorithm is to determine in a numerically stable
+   * way if a an intersection of the quadratic parametric curve against
+   * y = 0 is in the paremtirc range [0, 1]. What is does is to examine
+   * which of the control points are above the line y = 0. There are 8
+   * possibilities each yielding a result of weather or not to use the
+   * first and/or second intersection of the quadratic curve against the
+   * line y = 0. Rather than have a massive cumberson switch-case statement
+   * we simply store a single 16-bit value where 2-bits are given for each
+   * of the cases. The shift by the value of code is choosing which of
+   * those 2-bits and the bit-wise and by 3 is to make the test for the
+   * second bit from checking if a bit if up to just testing if the value
+   * is strictly greater than 1.
+   */
   code = (y1 > 0.0 ? 2u : 0u)
     + (y2 > 0.0 ? 4u : 0u)
     + (y3 > 0.0 ? 8u : 0u);
@@ -342,10 +380,21 @@ fastuidraw_restricted_rays_compute_winding_contribution(in fastuidraw_restricted
           D = B.y * B.y - A.y * C.y;
           if (D < 0.0)
             {
+              /* the original paper let the point get counted even
+               * when the descrimant was negative with the motivation
+               * that the changes by the t's would cancel each other.
+               * However, we are also computing a distance value to
+               * the curve and we don't want to allow those t's to
+               * affect the distance values (because the points (x1, 0)
+               * and (x2, 0) are not on the curves), so we just kill
+               * the possibility that they affect the values by just
+               * changing the code to zero.
+               */
               code.y = 0u;
+              D = 0.0;
             }
 
-          D = sqrt(max(D, 0.0));
+          D = sqrt(D);
           t1 = (B.y - D) * rA;
           t2 = (B.y + D) * rA;
         }
@@ -357,17 +406,53 @@ fastuidraw_restricted_rays_compute_winding_contribution(in fastuidraw_restricted
       x1 = (A.x * t1 - B.x * 2.0) * t1 + C.x;
       x2 = (A.x * t2 - B.x * 2.0) * t2 + C.x;
 
+      /* The winding number computation comes from the paper
+       * "GPU-Centered Font Rendering Directly from Glyph Outlines"
+       * by Eric Lengyel. The reason why the winding at t1 is always
+       * decremented and t2 is always incremented comes from the
+       * following:
+       *
+       *  y(t) = C + Bt + At^2
+       *
+       * which factors into:
+       *
+       *  y(t) = A(t - t1)(t - t2)
+       *
+       * whose derivative is
+       *
+       * y'(t) = A(t - t1) + A(t - t2)
+       *
+       * the two cases to examine are A > 0 and A < 0 when the roots are real.
+       *   case A > 0: then t1 <= t2, thus y'(t1) = A(t - t2) < 0 and y'(t2) = A(t2 - t1) > 0
+       *   case A < 0: then t1 >= t2, thus y'(t1) = A(t - t2) < 0 and y'(t2) = A(t2 - t1) > 0
+       *
+       * Thus, the change in the winding number for t1 and t2 will only depend on
+       * if x1 (repsectively x2) is greater or smaller than zero. When crossing from
+       * the fragment point to the reference point, the change is by one in the
+       * opposite of the sign of y'. For modifying the winding number, we only note
+       * the crossing if it is between the fragment and reference point (which means
+       * the x value is non-negative). Thus, the effect of t1 is to always increment
+       * (because y'(t1) <= 0) and the effect for t2 is to always decrement. However,
+       * the effect on the distance value is that the cross represents changing the
+       * winding number at the fragment point by +1 if x1 < 0 and -1 if x1 > 0 for t1.
+       * Similairly, the change in winding from the fragment point is -1 for
+       * x2 < 0 and +1 if x2 > 0 for t2.
+       *
+       * Additionally, although the condition x1 >= 0 (and x2 >= 0) are numerically unstable
+       * near the curve, that is OK because the anti-aliasing molifies the instability.
+       *
+       * Lastly, the entire point of the code value is to avoid testing against
+       * if t is in the range [0, 1]. Thus, for the distance updates we do not need
+       * to check if t is in range.
+       */
+
       if ((code.y & 1u) != 0u)
         {
           if (x1 <= tr.reference_location && x1 >= 0.0)
             {
               R += 1;
             }
-
-          if (t1 >= 0.0 && t1 <= 1.0)
-            {
-              fastuidraw_restricted_rays_update_distance(abs(x1), x1 < 0.0, dst);
-            }
+          fastuidraw_restricted_rays_update_distance(abs(x1), x1 < 0.0, dst);
         }
 
       if (code.y > 1u)
@@ -376,11 +461,7 @@ fastuidraw_restricted_rays_compute_winding_contribution(in fastuidraw_restricted
             {
               R -= 1;
             }
-
-          if (t2 >= 0.0 && t2 <= 1.0)
-            {
-              fastuidraw_restricted_rays_update_distance(abs(x2), x2 > 0.0, dst);
-            }
+          fastuidraw_restricted_rays_update_distance(abs(x2), x2 > 0.0, dst);
         }
     }
 
@@ -397,9 +478,10 @@ fastuidraw_restricted_rays_compute_winding_contribution(in fastuidraw_restricted
           if (D < 0.0)
             {
               code.x = 0u;
+              D = 0.0;
             }
 
-          D = sqrt(max(D, 0.0));
+          D = sqrt(D);
           t1 = (B.x - D) * rA;
           t2 = (B.x + D) * rA;
         }
@@ -411,82 +493,36 @@ fastuidraw_restricted_rays_compute_winding_contribution(in fastuidraw_restricted
       y1 = (A.y * t1 - B.y * 2.0) * t1 + C.y;
       y2 = (A.y * t2 - B.y * 2.0) * t2 + C.y;
 
-      if ((code.x & 1u) != 0u && t1 >= 0.0 && t1 <= 1.0)
+      if ((code.x & 1u) != 0u)
         {
           fastuidraw_restricted_rays_update_distance(abs(y1), y1 > 0.0, dst);
         }
 
-      if (code.x > 1u && t2 >= 0.0 && t2 <= 1.0)
+      if (code.x > 1u)
         {
           fastuidraw_restricted_rays_update_distance(abs(y2), y2 < 0.0, dst);
         }
     }
 
-  /* When computing the L1-distance, we also need to minimum with the
-   * endpoint of the curve. In local coordinates, the curve is given by:
+  /* We are just computing a distance-like value to perform anti-aliasing;
+   * as such we can skip computing the other critical points for the L1-distance
+   * function f(t) = |x(t) - x| + |y(t) - y| which are the end points and the
+   * points p(t) = (x(t), y(t)) where |x'(t)| = |y'(t)|.
    *
-   *  p(t) = (A * t - 2B) * t + C
+   * If we are to check the end-points, we would need to only check t = 0.
+   * This is because if t = 1 is within the cell, then the curve that starts
+   * at t = 1 would also be within the cell. Checking the end point t = 0
+   * is the code:
    *
-   * so
+   *   fastuidraw_restricted_rays_update_distance(curve.p1, -B, dst);
    *
-   *  p'(t) = 2At - 2B
+   * this is because the curve is p(t) = At^2 -2Bt + C, thus its
+   * derivative is p'(t) = -2At - 2B which at p'(0) = -2B. We only need
+   * the direction of the derivative in the 2nd argument, so -B is
+   * sufficient and the curve at 0 is curve.p1.
+   *
+   * TODO: decide if need the end point or not.
    */
-  vec2 dp1, dp3;
-
-  dp1 = -B;
-  dp3 = A - B;
-  fastuidraw_restricted_rays_update_distance(curve.p1, dp1, dst);
-  fastuidraw_restricted_rays_update_distance(curve.p3, dp3, dst);
-
-  /* The last ingredient of minimizing the L1-distance is to minimize
-   * against those t for which:
-   *
-   *   x'(t) - y'(t) = 0 or x'(t) + y'(t) = 0
-   *
-   * thus the t's are t0 and t1 where
-   *
-   * (A.x * t0 - B.x) + (A.y * t0 - B.y) = 0 --> t0 = (B.x + B.y) / (A.x + A.y)
-   * (A.x * t1 - B.x) - (A.y * t1 - B.y) = 0 --> t1 = (B.x - B.y) / (A.x - A.y)
-   *
-   */
-  if (curve.is_quadratic)
-    {
-      float d0, d1, n0, n1;
-      const float tol = 0.0001;
-
-      n0 = B.x + B.y;
-      d0 = A.x + A.y;
-      n0 *= sign(d0);
-      d0 = abs(d0);
-
-      n1 = B.x - B.y;
-      d1 = A.x - A.y;
-      n1 *= sign(d1);
-      d1 = abs(d1);
-
-      if (n0 > 0.0 && d0 > n0)
-        {
-          float t0;
-          vec2 p, dp;
-
-          t0 = n0 / d0;
-          p = (A * t0 - 2.0 * B) * t0 + C;
-          dp = A * t0 - B;
-          fastuidraw_restricted_rays_update_distance(p, dp, dst);
-        }
-
-      if (n1 > 0.0 && d1 > n1)
-        {
-          float t1;
-          vec2 p, dp;
-
-          t1 = n1 / d1;
-          p = (A * t1 - 2.0 * B) * t1 + C;
-          dp = A * t1 - B;
-          fastuidraw_restricted_rays_update_distance(p, dp, dst);
-        }
-    }
-
   return R;
 }
 
@@ -496,29 +532,24 @@ fastuidraw_restricted_rays_load_curve(in uint raw,
                                       out fastuidraw_restricted_rays_curve_type curve)
 {
   uint curve_src;
-  ivec2 ip1, ip2, ip3, iA, i2B, iC;
 
   curve_src = glyph_data_location + FASTUIDRAW_EXTRACT_BITS(fastuidraw_restricted_rays_curve_bit0,
                                                             fastuidraw_restricted_rays_curve_num_bits,
                                                             raw);
   curve.is_quadratic = (raw & fastuidraw_restricted_rays_curve_is_quadratic_mask) != 0u;
 
-  ip1 = fastuidraw_restricted_rays_unpack_point(curve_src);
-  ip2 = fastuidraw_restricted_rays_unpack_point(curve_src + 1u);
+  curve.p1 = fastuidraw_restricted_rays_unpack_point(curve_src);
+  curve.p2 = fastuidraw_restricted_rays_unpack_point(curve_src + 1u);
 
   if (curve.is_quadratic)
     {
-      ip3 = fastuidraw_restricted_rays_unpack_point(curve_src + 2u);
-      curve.p2 = vec2(ip2);
+      curve.p3 = fastuidraw_restricted_rays_unpack_point(curve_src + 2u);
     }
   else
     {
-      ip3 = ip2;
-      curve.p2 = 0.5 * vec2(ip1 + ip3);
+      curve.p3 = curve.p2;
+      curve.p2 = 0.5 * (curve.p1 + curve.p3);
     }
-
-  curve.p1 = vec2(ip1);
-  curve.p3 = vec2(ip3);
 }
 
 int
@@ -550,7 +581,7 @@ fastuidraw_restricted_rays_load_winding_reference(in uint location,
   vec2 position, delta;
 
   position = box.min_point;
-  texel = FASTUIDRAW_RESTRICTED_RAYS_FETCH_DATA(location);
+  texel = fastuidraw_fetch_glyph_data(location);
 
   biased_winding = FASTUIDRAW_EXTRACT_BITS(fastuidraw_restricted_rays_winding_value_bit0,
                                            fastuidraw_restricted_rays_winding_value_num_bits, texel);
@@ -572,19 +603,25 @@ fastuidraw_restricted_rays_compute_coverage(in uint glyph_data_location,
                                             in vec2 glyph_coord,
                                             in vec2 glyph_coord_dx,
                                             in vec2 glyph_coord_dy,
-                                            in vec2 bb_box_min,
-                                            in vec2 bb_box_max,
-                                            out fastuidraw_restricted_rays_box_type texel_box,
-                                            out fastuidraw_restricted_rays_winding_sample_type S,
-                                            out int winding_number, out uint num_curves,
-                                            out fastuidraw_restricted_rays_distance_type nv)
+                                            in bool use_odd_even_rule
+                                            #ifdef FASTUIDRAW_DEBUG
+                                            ,out fastuidraw_restricted_rays_box_type out_texel_box,
+                                            out fastuidraw_restricted_rays_winding_sample_type out_S,
+                                            out int out_winding_number, out uint out_num_curves,
+                                            out fastuidraw_restricted_rays_distance_type out_nv
+                                            #endif
+                                            )
 {
   uint src, c, curve_list, winding_sample_data_location;
   fastuidraw_restricted_rays_transformation tr;
+  fastuidraw_restricted_rays_box_type texel_box;
+  fastuidraw_restricted_rays_winding_sample_type S;
+  int winding_number;
+  uint num_curves;
+  fastuidraw_restricted_rays_distance_type nv;
 
   winding_sample_data_location =
     fastuidaw_restricted_rays_compute_box(glyph_coord,
-                                          bb_box_min, bb_box_max,
                                           glyph_data_location,
                                           texel_box, curve_list, num_curves);
   fastuidraw_restricted_rays_init_distance(nv);
@@ -601,7 +638,7 @@ fastuidraw_restricted_rays_compute_coverage(in uint glyph_data_location,
     {
       uint cA, cB, curve_pair;
 
-      curve_pair = FASTUIDRAW_RESTRICTED_RAYS_FETCH_DATA(src);
+      curve_pair = fastuidraw_fetch_glyph_data(src);
       ++src;
 
       cA = FASTUIDRAW_EXTRACT_BITS(fastuidraw_restricted_rays_curve_entry0_bit0,
@@ -620,14 +657,14 @@ fastuidraw_restricted_rays_compute_coverage(in uint glyph_data_location,
 
   float cvg, distance;
 
-  /* If the winding number at the fragment is 0, use
-   * the minimum of those two; if the winding value is 1
-   * use the decrement value and if the winding is -1 use the
-   * increment winding number; if the absolute value of the
-   * winding value is greater than two, we will view the
-   * fragment as fully covered.
+  /* If using the odd-even fill rule of if the winding number at
+   * the fragment is 0, use the minimum of those two; if the
+   * winding value is 1 use the decrement value and if the winding
+   * is -1 use the increment winding number; if the absolute value
+   * of the winding value is greater than two, we will fallback
+   * and simply view the fragment as fully covered.
    */
-  if (winding_number == 0)
+  if (winding_number == 0 || use_odd_even_rule)
     {
       distance = min(nv.distance_increment,
                      nv.distance_decrement);
@@ -646,20 +683,31 @@ fastuidraw_restricted_rays_compute_coverage(in uint glyph_data_location,
     }
 
   distance = min(distance, 0.5);
+  winding_number = (use_odd_even_rule && (winding_number & 1) == 0) ? 0 : winding_number;
   cvg = (winding_number != 0) ?
     (0.5 + distance) :
     (0.5 - distance);
 
+  #ifdef FASTUIDRAW_DEBUG
+    {
+      out_texel_box = texel_box;
+      out_S = S;
+      out_winding_number = winding_number;
+      out_num_curves = num_curves;
+      out_nv = nv;
+    }
+  #endif
+
   return cvg;
 }
 
+#ifdef FASTUIDRAW_DEBUG
 float
 fastuidraw_restricted_rays_compute_coverage(in uint glyph_data_location,
                                             in vec2 glyph_coord,
                                             in vec2 glyph_coord_dx,
                                             in vec2 glyph_coord_dy,
-                                            in vec2 bb_box_min,
-                                            in vec2 bb_box_max)
+                                            in bool use_odd_even_rule)
 {
   fastuidraw_restricted_rays_box_type texel_box;
   fastuidraw_restricted_rays_winding_sample_type S;
@@ -670,7 +718,26 @@ fastuidraw_restricted_rays_compute_coverage(in uint glyph_data_location,
   return fastuidraw_restricted_rays_compute_coverage(glyph_data_location,
                                                      glyph_coord,
                                                      glyph_coord_dx, glyph_coord_dy,
-                                                     bb_box_min, bb_box_max,
+                                                     use_odd_even_rule,
                                                      texel_box, S, winding_number,
                                                      num_curves, nv);
 }
+#endif
+///@endcond
+
+/*!
+ * Compute the coverage of a fragment within a \ref fastuidraw::GlyphRenderDataRestrictedRays glyph.
+ * \param glyph_data_location location of the glyph data (see \ref
+ *                            fastuidraw::GlyphRenderDataRestrictedRays::glyph_offset)
+ * \param glyph_coord the coordinate of the fragment in glyph coordinates
+ * \param glyph_coord_dx the value of dFdx(glyph_coord)
+ * \param glyph_coord_dy the value of dFdy(glyph_coord)
+ * \param use_odd_even_rule if true, use the odd-even fill rule, otherwise use the non-zero fill rule.
+ */
+float
+fastuidraw_restricted_rays_compute_coverage(in uint glyph_data_location,
+                                            in vec2 glyph_coord,
+                                            in vec2 glyph_coord_dx,
+                                            in vec2 glyph_coord_dy,
+                                            in bool use_odd_even_rule);
+/*! @} */

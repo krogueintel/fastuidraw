@@ -1,0 +1,55 @@
+/*!
+ * \file fastuidraw_painter_main_deferred_coverage.vert.glsl.resource_string
+ * \brief file fastuidraw_painter_main_deferred_coverage.vert.glsl.resource_string
+ *
+ * Copyright 2018 by Intel.
+ *
+ * Contact: kevin.rogovin@gmail.com
+ *
+ * This Source Code Form is subject to the
+ * terms of the Mozilla Public License, v. 2.0.
+ * If a copy of the MPL was not distributed with
+ * this file, You can obtain one at
+ * http://mozilla.org/MPL/2.0/.
+ *
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
+ *
+ */
+
+
+/* Skeleton for Uber-vertex shader, out's of the shader will
+   be placed -before- this code.
+ */
+
+#ifdef FASTUIDRAW_PAINTER_NORMALIZED_Z_MINUS_1_TO_1
+  #define FASTUIDRAW_DEPTH_COEFF (1.0 / float(fastuidraw_half_max_z) )
+#else
+  #define FASTUIDRAW_DEPTH_COEFF (1.0 / float(fastuidraw_max_z) )
+#endif
+
+void
+fastuidraw_vert_brush_processing(in vec2 in_p, in fastuidraw_header h)
+{
+}
+
+void
+main(void)
+{
+  fastuidraw_header h;
+  vec2 normalized_translate;
+  vec3 clip_p;
+  fastuidraw_clipping_data clipping;
+
+  fastuidraw_read_header(fastuidraw_header_attribute, h);
+  fastuidraw_read_clipping(h.clipping_location, clipping);
+  fastuidraw_read_item_matrix(h.item_matrix_location, fastuidraw_item_matrix, normalized_translate);
+
+  fastuidraw_frag_shader = h.item_shader;
+  fastuidraw_frag_shader_data_location = h.item_shader_data_location;
+
+  fastuidraw_run_vert_shader(h, clip_p);
+  fastuidraw_apply_clipping(clip_p, clipping);
+
+  clip_p.xy += normalized_translate * clip_p.z;
+  gl_Position = vec4(clip_p.xy, 0.0, clip_p.z);
+}

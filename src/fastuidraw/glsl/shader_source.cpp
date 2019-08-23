@@ -13,7 +13,7 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  */
 
 #include <iostream>
@@ -36,7 +36,7 @@
 #include <fastuidraw/util/c_array.hpp>
 #include <fastuidraw/util/static_resource.hpp>
 #include <fastuidraw/glsl/shader_source.hpp>
-#include "../private/util_private.hpp"
+#include <private/util_private.hpp>
 
 namespace
 {
@@ -53,7 +53,6 @@ namespace
     std::list<source_code_t> m_values;
     std::map<std::string, extension_enable_t> m_extensions;
     std::string m_version;
-    bool m_disable_pre_added_source;
 
     std::string m_assembled_code;
     std::string m_assembled_code_base;
@@ -61,6 +60,10 @@ namespace
     static
     std::string
     strip_leading_white_spaces(const std::string &S);
+
+    static
+    std::string
+    replace_double_colon(std::string S);
 
     static
     void
@@ -103,7 +106,7 @@ namespace
   macro_value_as_string(float v)
   {
     std::ostringstream str;
-    str << v;
+    str << "float(" << v << ")";
     return str.str();
   }
 
@@ -156,8 +159,7 @@ namespace
 // SourcePrivate methods
 SourcePrivate::
 SourcePrivate(void):
-  m_dirty(false),
-  m_disable_pre_added_source(false)
+  m_dirty(false)
 {
 }
 
@@ -194,6 +196,24 @@ string_from_extension_t(extension_enable_t tp)
 
 std::string
 SourcePrivate::
+replace_double_colon(std::string S)
+{
+  char *prev_char(nullptr);
+
+  for (auto iter = S.begin(), end = S.end(); iter != end; ++iter)
+    {
+      if (prev_char && *prev_char == ':' && *iter == ':')
+        {
+          *prev_char = 'D';
+          *iter= 'D';
+        }
+      prev_char= &(*iter);
+    }
+  return S;
+}
+
+std::string
+SourcePrivate::
 strip_leading_white_spaces(const std::string &S)
 {
   std::string::const_iterator iter, end;
@@ -214,6 +234,7 @@ emit_source_line(std::ostream &output_stream,
 {
   std::string S;
   S = strip_leading_white_spaces(source);
+  S = replace_double_colon(S);
   output_stream << S;
 
   #ifndef NDEBUG
@@ -498,14 +519,8 @@ add_macro(c_string macro_name, c_string macro_value,
           enum add_location_t loc)
 {
   std::ostringstream ostr;
-  std::string stripped(stripped_macro_name(macro_name));
 
-  ostr << "#ifdef " << stripped << "\n"
-       << "#error \"FastUIDraw: ShaderSource::add_macro() used on "
-       << "already defined macro " << stripped << "\"\n"
-       << "#endif\n"
-       << "#define " << macro_name << " " << macro_value
-       << "\n";
+  ostr << "#define " << macro_name << " " << macro_value << "\n";
   return add_source(ostr.str().c_str(), from_string, loc);
 }
 
@@ -556,11 +571,7 @@ remove_macro(c_string macro_name,
              enum add_location_t loc)
 {
   std::ostringstream ostr;
-  ostr << "#ifndef " << macro_name << "\n"
-       << "#error \"FastUIDraw: ShaderSource::remove_macro() "
-       << "used on undefined macro " << macro_name << "\"\n"
-       << "#endif\n"
-       << "#undef " << macro_name << "\n";
+  ostr << "#undef " << macro_name << "\n";
   return add_source(ostr.str().c_str(), from_string, loc);
 }
 
@@ -605,17 +616,6 @@ specify_extensions(const ShaderSource &obj)
   return *this;
 }
 
-fastuidraw::glsl::ShaderSource&
-fastuidraw::glsl::ShaderSource::
-disable_pre_added_source(void)
-{
-  SourcePrivate *d;
-  d = static_cast<SourcePrivate*>(m_d);
-  d->m_dirty = d->m_dirty || !d->m_disable_pre_added_source;
-  d->m_disable_pre_added_source = true;
-  return *this;
-}
-
 fastuidraw::c_string
 fastuidraw::glsl::ShaderSource::
 assembled_code(bool code_only) const
@@ -640,14 +640,11 @@ assembled_code(bool code_only) const
                                   << "\n";
         }
 
-      if (!d->m_disable_pre_added_source)
+      #ifdef FASTUIDRAW_DEBUG
         {
-          output_glsl_source_code << "uint fastuidraw_mask(uint num_bits) { return (uint(1) << num_bits) - uint(1); }\n"
-                                  << "uint fastuidraw_extract_bits(uint bit0, uint num_bits, uint src) { return (src >> bit0) & fastuidraw_mask(num_bits); }\n"
-                                  << "#define FASTUIDRAW_MASK(bit0, num_bits) (fastuidraw_mask(uint(num_bits)) << uint(bit0))\n"
-                                  << "#define FASTUIDRAW_EXTRACT_BITS(bit0, num_bits, src) fastuidraw_extract_bits(uint(bit0), uint(num_bits), uint(src) )\n"
-                                  << "void fastuidraw_do_nothing(void) {}\n";
+          output_glsl_source_code << "#define FASTUIDRAW_DEBUG\n";
         }
+      #endif
 
       for(const SourcePrivate::source_code_t &src : d->m_values)
         {

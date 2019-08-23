@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_FONT_HPP
+#define FASTUIDRAW_FONT_HPP
 
 #include <fastuidraw/util/reference_counted.hpp>
 #include <fastuidraw/util/c_array.hpp>
@@ -25,13 +26,14 @@
 #include <fastuidraw/path.hpp>
 #include <fastuidraw/text/character_encoding.hpp>
 #include <fastuidraw/text/font_properties.hpp>
+#include <fastuidraw/text/font_metrics.hpp>
 #include <fastuidraw/text/glyph_render_data.hpp>
 #include <fastuidraw/text/glyph_metrics.hpp>
 #include <fastuidraw/text/glyph_metrics_value.hpp>
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
   class Glyph;
@@ -43,15 +45,16 @@ namespace fastuidraw
    * to generate glyph rendering data.
    */
   class FontBase:
-    public reference_counted<FontBase>::default_base
+    public reference_counted<FontBase>::concurrent
   {
   public:
     /*!
      * Ctor.
      * \param pprops font properties describing the font
+     * \param pmetrics metrics common to all glyphs of the font
      */
-    explicit
-    FontBase(const FontProperties &pprops);
+    FontBase(const FontProperties &pprops,
+             const FontMetrics &pmetrics);
 
     virtual
     ~FontBase();
@@ -61,6 +64,12 @@ namespace fastuidraw
      */
     const FontProperties&
     properties(void) const;
+
+    /*!
+     * Returns the metrics of the font.
+     */
+    const FontMetrics&
+    metrics(void) const;
 
     /*!
      * Returns the unique ID of the \ref FontBase object.
@@ -140,7 +149,6 @@ namespace fastuidraw
     unsigned int
     number_glyphs(void) const = 0;
 
-  private:
     /*!
      * To be implemented by a derived class to indicate
      * that it will return non-nullptr in
@@ -176,12 +184,12 @@ namespace fastuidraw
     virtual
     GlyphRenderData*
     compute_rendering_data(GlyphRenderer render, GlyphMetrics glyph_metrics,
-			   Path &path, vec2 &render_size) const = 0;
+                           Path &path, vec2 &render_size) const = 0;
 
-    friend class Glyph;
-    friend class GlyphCache;
-
+  private:
     void *m_d;
   };
 /*! @} */
 }
+
+#endif

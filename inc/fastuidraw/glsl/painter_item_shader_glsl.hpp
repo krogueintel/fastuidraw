@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,15 +12,17 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_PAINTER_ITEM_SHADER_GLSL_HPP
+#define FASTUIDRAW_PAINTER_ITEM_SHADER_GLSL_HPP
 
-#include <fastuidraw/painter/painter_item_shader.hpp>
+#include <fastuidraw/painter/shader/painter_item_shader.hpp>
 #include <fastuidraw/glsl/shader_source.hpp>
+#include <fastuidraw/glsl/symbol_list.hpp>
 
 namespace fastuidraw
 {
@@ -31,315 +33,218 @@ namespace fastuidraw
  */
     /*!
      * \brief
-     * A varying_list lists all the in's of a frag
-     * shader (and their names) or all the out's of vertex
-     * shader.
+     * A PainterItemCoverageShaderGLSL is a collection of GLSL source code
+     * fragments for a \ref PainterShaderRegistrarGLSL.
      *
-     * A varying for a PainterShaderGL is a SCALAR. For a vertex
-     * and fragment shader pair, the name of the varying does NOT
-     * matter for the sending of a vertex shader out to a fragment
-     * shader in. Instead, the slot matters. The virtual slots for
-     * each varying type are seperate, i.e. slot 0 for uint is a
-     * different slot than slot 0 for int. In addition the
-     * interpolation type is part of the type for floats,
-     * thus slot 0 for flat float is a different slot than
-     * slot 0 for smooth float.
+     * The vertex shader code needs to implement the function:
+     * \code
+     *   void
+     *   fastuidraw_gl_vert_main(in uint sub_shader,
+     *                           in uvec4 attrib0,
+     *                           in uvec4 attrib1,
+     *                           in uvec4 attrib2,
+     *                           inout uint shader_data_block,
+     *                           out vec3 clip_p)
+     * \endcode
+     * where
+     *  - sub_shader corresponds to PainterItemCoverageShader::sub_shader()
+     *  - attrib0 corresponds to PainterAttribute::m_attrib0,
+     *  - attrib1 corresponds to PainterAttribute::m_attrib1,
+     *  - attrib2 corresponds to PainterAttribute::m_attrib2 and
+     *  - shader_data_block is what block in the data store for
+     *    the data packed by PainterItemCoverageShaderData::pack_data()
+     *    of the PainterItemCoverageShaderData in the \ref Painter call;
+     *    use the macro fastuidraw_fetch_data() to read the data.
+     *
+     * The output clip_p is to hold the clip-coordinate of the vertex.
+     *
+     * The fragment shader code needs to implement the function:
+     * \code
+     *   float
+     *   fastuidraw_gl_frag_main(in uint sub_shader,
+     *                           inout uint shader_data_block)
+     * \endcode
+     *
+     * which returns the value to write to the coverage buffer
+     * from the fragment for the item.
+     *
+     * Available to only the vertex shader are the following:
+     *  - the GLSL elements in the module \ref GLSLVertCode
+     *
+     * Available to only the fragment shader are the following:
+     *  - the GLSL elements in the module \ref GLSLFragCode
+     *
+     * Available to both the vertex and fragment shader are the following:
+     *  - the GLSL elements in the module \ref GLSLVertFragCode
+     *
+     * For both stages, the value of the argument of shader_data_block is
+     * which 128-bit block into the data store (PainterDraw::m_store) of the
+     * shader data to be read with the GLSL macro \ref fastuidraw_fetch_data.
+     * On exit, this value must be updated to the location just past the
+     * shader data of the shader.
+     *
+     * For both stages, the value of the argument of sub_shader() is the
+     * value of \ref PainterShader::sub_shader() of the active shader.
+     *
+     * Also, if one defines macros in any of the passed ShaderSource objects,
+     * those macros MUST be undefined at the end. In addition, if one
+     * has local helper functions, to avoid global name collision, those
+     * function names should be wrapped in the macro FASTUIDRAW_LOCAL()
+     * to make sure that the function is given a unique global name within
+     * the uber-shader.
+     *
+     * Lastly, one can use the class \ref UnpackSourceGenerator to generate
+     * shader code to unpack values from the data in the data store buffer.
+     * That machine generated code uses the macro fastuidraw_fetch_data().
      */
-    class varying_list
+    class PainterItemCoverageShaderGLSL:public PainterItemCoverageShader
     {
     public:
       /*!
        * \brief
-       * Enumeration to define the interpolation of a varying
+       * If one wishes to make use of other \ref PainterItemCoverageShaderGLSL
+       * fastuidraw_gl_vert_main()/fastuidraw_gl_frag_main() of other shaders
+       * (for example to have a simple shader that adds on to a previous shader),
+       * a DependencyList provides the means to do so.
+       *
+       * Each such used shader is given a name by which the caller will use it.
+       * In addition, the caller has access to the varyings and shared symbols
+       * of the callee as well. A varying or shareable V of an element in the \ref
+       * DependencyList is accessed from the parent shader with dep::V where dep
+       * is the argument value of name to \ref add_shader(). Note that it is
+       * accessed with the scope-resolution operator; the uber-shader assember
+       * will convert the scope-resolution operator into acceptable GLSL code.
+       *
+       * By using the values of the shareables (embodied in fields \ref
+       * symbol_list::m_vert_shareable_values and \ref symbol_list::m_frag_shareable_values),
+       * reading and potentially modifying the values of the varyings, one can
+       * create effects building off of the built-in shaders of the GLSL module.
        */
-      enum interpolation_qualifier_t
-        {
-          interpolation_smooth, /*!< corresponds to "smooth" in GLSL */
-          interpolation_flat, /*!< corresponds to "flat" in GLSL */
-          interpolation_noperspective, /*!< corresponds to "noperspective" in GLSL */
+      class DependencyList
+      {
+      public:
+        /*!
+         * Ctor.
+         */
+        DependencyList(void);
 
-          interpolation_number_types,
-        };
+        /*!
+         * Copy ctor.
+         * \param obj value from which to copy
+         */
+        DependencyList(const DependencyList &obj);
+
+        ~DependencyList();
+
+        /*!
+         * Assignment operator
+         * \param rhs value from which to copy
+         */
+        DependencyList&
+        operator=(const DependencyList &rhs);
+
+        /*!
+         * Swap operation
+         * \param obj object with which to swap
+         */
+        void
+        swap(DependencyList &obj);
+
+        /*!
+         * Add a shader to the DependencyList's list.
+         * \param name name by which to call the shader
+         * \param shader shader to add to this DependencyList
+         */
+        DependencyList&
+        add_shader(c_string name,
+                   const reference_counted_ptr<const PainterItemCoverageShaderGLSL> &shader);
+
+      private:
+        friend class PainterItemCoverageShaderGLSL;
+        void *m_d;
+      };
 
       /*!
        * Ctor.
+       * \param vertex_src GLSL source holding vertex shader routine
+       * \param fragment_src GLSL source holding fragment shader routine
+       * \param symbols list of symbols of the shader
+       * \param num_sub_shaders the number of sub-shaders it supports
+       * \param dependencies list of other \ref PainterItemCoverageShaderGLSL
+       *                     that are used directly.
        */
-      varying_list(void);
+      PainterItemCoverageShaderGLSL(const ShaderSource &vertex_src,
+                                    const ShaderSource &fragment_src,
+                                    const symbol_list &symbols,
+                                    unsigned int num_sub_shaders = 1,
+                                    const DependencyList &dependencies = DependencyList());
 
       /*!
-       * Copy ctor.
-       * \param rhs value from which to copy
+       * Ctor.
+       * \param vertex_src GLSL source holding vertex shader routine
+       * \param fragment_src GLSL source holding fragment shader routine
+       * \param symbols list of symbols of the shader
+       * \param num_sub_shaders the number of sub-shaders it supports
+       * \param dependencies list of other \ref PainterItemCoverageShaderGLSL
+       *                     that are used directly.
        */
-      varying_list(const varying_list &rhs);
+      PainterItemCoverageShaderGLSL(const ShaderSource &vertex_src,
+                                    const ShaderSource &fragment_src,
+                                    const symbol_list &symbols,
+                                    const DependencyList &dependencies,
+                                    unsigned int num_sub_shaders = 1);
 
-      ~varying_list();
+      ~PainterItemCoverageShaderGLSL();
 
       /*!
-       * Assignment operator.
-       * \param rhs value from which to copy
+       * Returns the symbol of the shader
        */
-      varying_list&
-      operator=(const varying_list &rhs);
+      const symbol_list&
+      symbols(void) const;
 
       /*!
-       * Swap operation
-       * \param obj object with which to swap
-       */
-      void
-      swap(varying_list &obj);
-
-      /*!
-       * Returns the names for the slots of the float
-       * varyings of the specified interpolation type.
-       * \param q interpolation type
-       */
-      c_array<const c_string>
-      floats(enum interpolation_qualifier_t q) const;
-
-      /*!
-       * Returns an array R, so that R[i] is
-       * floats(i).size().
-       */
-      c_array<const size_t>
-      float_counts(void) const;
-
-      /*!
-       * Returns the names for the slots of the uint varyings
-       */
-      c_array<const c_string>
-      uints(void) const;
-
-      /*!
-       * Returns the names for the slots of the int varyings
-       */
-      c_array<const c_string>
-      ints(void) const;
-
-      /*!
-       * Set a float of the named slot and qualifier to a name.
-       * \param pname name to use
-       * \param slot which float of the named qualifier
-       * \param q interpolation qualifier
-       */
-      varying_list&
-      set_float_varying(unsigned int slot, c_string pname,
-                        enum interpolation_qualifier_t q = interpolation_smooth);
-
-      /*!
-       * Add a float varying, equivalent to
+       * Returns the varyings of the shader, equivalent to
        * \code
-       * set_float_varying(floats(q).size(), pname, q)
+       * symbols().m_varying_list;
        * \endcode
        */
-      varying_list&
-      add_float_varying(c_string pname, enum interpolation_qualifier_t q = interpolation_smooth);
+      const varying_list&
+      varyings(void) const
+      {
+        return symbols().m_varying_list;
+      }
 
       /*!
-       * Set a uint of the named slot to a name.
-       * \param pname name to use
-       * \param slot which uint
+       * Return the GLSL source of the vertex shader
        */
-      varying_list&
-      set_uint_varying(unsigned int slot, c_string pname);
+      const ShaderSource&
+      vertex_src(void) const;
 
       /*!
-       * Add an uint varying, equivalent to
-       * \code
-       * set_uint_varying(uints().size(), pname)
-       * \endcode
+       * Return the GLSL source of the fragment shader
        */
-      varying_list&
-      add_uint_varying(c_string pname);
+      const ShaderSource&
+      fragment_src(void) const;
 
       /*!
-       * Set a int of the named slot to a name.
-       * \param pname name to use
-       * \param slot which uint
+       * Return the list of shaders on which this shader is dependent.
        */
-      varying_list&
-      set_int_varying(unsigned int slot, c_string pname);
+      c_array<const reference_counted_ptr<const PainterItemCoverageShaderGLSL> >
+      dependency_list_shaders(void) const;
 
       /*!
-       * Add an int varying, equivalent to
-       * \code
-       * set_int_varying(ints().size(), pname)
-       * \endcode
+       * Returns the names that each shader listed in \ref
+       * dependency_list_shaders() is referenced by, i.e.
+       * the i'th element of dependency_list_shaders() is
+       * referenced as the i'th element of \ref
+       * dependency_list_names().
        */
-      varying_list&
-      add_int_varying(c_string pname);
+      c_array<const c_string>
+      dependency_list_names(void) const;
 
     private:
       void *m_d;
     };
-
-    /*!
-     * \brief
-     * A shader_unpack_value represents a value to unpack
-     * from the data store.
-     */
-    class shader_unpack_value
-    {
-    public:
-      /*!
-       * Enumeration specifing GLSL type for value
-       * to unpack.
-       */
-      enum type_t
-        {
-          float_type, /*!< GLSL type is float */
-          uint_type,  /*!< GLSL type is uint */
-          int_type,   /*!< GLSL type is int */
-        };
-
-      /*!
-       * Ctor.
-       * \param pname value returned by name(). The string behind the passed pointer
-       *              is copied
-       * \param ptype the value returned by type().
-       */
-      shader_unpack_value(c_string pname = "", type_t ptype = float_type);
-
-      /*!
-       * Copy ctor
-       */
-      shader_unpack_value(const shader_unpack_value &obj);
-
-      ~shader_unpack_value();
-
-      /*!
-       * Assignment operator
-       */
-      shader_unpack_value&
-      operator=(const shader_unpack_value &rhs);
-
-      /*!
-       * Swap operation
-       * \param obj object with which to swap
-       */
-      void
-      swap(shader_unpack_value &obj);
-
-      /*!
-       * The name of the value to unpack as it appears in GLSL
-       */
-      c_string
-      name(void) const;
-
-      /*!
-       * The GLSL type of the value to unpack
-       */
-      enum type_t
-      type(void) const;
-
-      /*!
-       * Adds to a ShaderSource the GLSL code to unpack a
-       * stream of values. Returns the number of blocks needed to unpack
-       * the data in GLSL.
-       * \param str location to which to add the GLSL code
-       * \param labels GLSL names and types to which to unpack
-       * \param offset_name GLSL name for offset from which to unpack
-       *                    values
-       * \param prefix string prefix by which to prefix the name values of labels
-       */
-      static
-      unsigned int
-      stream_unpack_code(ShaderSource &str,
-                         c_array<const shader_unpack_value> labels,
-                         c_string offset_name,
-                         c_string prefix = "");
-
-      /*!
-       * Adds to a ShaderSource the GLSL function:
-       * \code
-       * uint
-       * function_name(uint location, out out_type v)
-       * \endcode
-       * whose body is the unpacking of the values into an
-       * out. Returns the number of blocks needed to unpack
-       * the data in GLSL.
-       * \param str location to which to add the GLSL code
-       * \param labels GLSL names of the fields and their types
-       * \param function_name name to give the function
-       * \param out_type the out type of the function
-       * \param returns_new_offset if true, function returns the offset after
-       *                           the data it unpacks.
-       */
-      static
-      unsigned int
-      stream_unpack_function(ShaderSource &str,
-                             c_array<const shader_unpack_value> labels,
-                             c_string function_name,
-                             c_string out_type,
-                             bool returns_new_offset = true);
-    private:
-      void *m_d;
-    };
-
-    /*!
-     * \brief
-     * A shader_unpack_value_set is a convenience class wrapping
-     * an array of shader_unpack_value objects.
-     */
-    template<size_t N>
-    class shader_unpack_value_set:
-      public vecN<shader_unpack_value, N>
-    {
-    public:
-      /*!
-       * Set the named element to a value.
-       * \param i which element of this to set
-       * \param name name value
-       * \param type type value
-       */
-      shader_unpack_value_set&
-      set(unsigned int i, c_string name,
-          shader_unpack_value::type_t type = shader_unpack_value::float_type)
-      {
-        this->operator[](i) = shader_unpack_value(name, type);
-        return *this;
-      }
-
-      /*!
-       * Provided as an API convenience, equivalent to
-       * \code
-       * shader_unpack_value::stream_unpack_code(str, *this, offset_name);
-       * \endcode
-       * \param str location to which to add the GLSL code
-       * \param offset_name GLSL name for offset from which to unpack
-       *                    values
-       * \param prefix string prefix by which to prefix the name values of labels
-       */
-      unsigned int
-      stream_unpack_code(ShaderSource &str,
-                         c_string offset_name,
-                         c_string prefix = "")
-      {
-        return shader_unpack_value::stream_unpack_code(str, *this, offset_name, prefix);
-      }
-
-      /*!
-       * Provided as an API convenience, equivalent to
-       * \code
-       * shader_unpack_value::stream_unpack_function(str, *this, function_name,
-       *                                             out_type, returns_new_offset);
-       * \endcode
-       * \param str location to which to add the GLSL code
-       * \param function_name name to give the function
-       * \param out_type the out type of the function
-       * \param returns_new_offset if true, function returns the offset after
-       *                           the data it unpacks.
-       */
-      unsigned int
-      stream_unpack_function(ShaderSource &str,
-                             c_string function_name,
-                             c_string out_type,
-                             bool returns_new_offset = true)
-      {
-        return shader_unpack_value::stream_unpack_function(str, *this, function_name,
-                                                           out_type, returns_new_offset);
-      }
-    };
-
 
     /*!
      * \brief
@@ -353,7 +258,7 @@ namespace fastuidraw
      *                           in uvec4 attrib0,
      *                           in uvec4 attrib1,
      *                           in uvec4 attrib2,
-     *                           in uint shader_data_offset,
+     *                           inout uint shader_data_block,
      *                           out uint z_add,
      *                           out vec2 brush_p,
      *                           out vec3 clip_p)
@@ -363,58 +268,47 @@ namespace fastuidraw
      *  - attrib0 corresponds to PainterAttribute::m_attrib0,
      *  - attrib1 corresponds to PainterAttribute::m_attrib1,
      *  - attrib2 corresponds to PainterAttribute::m_attrib2 and
-     *  - shader_data_offset is what block in the data store for
+     *  - shader_data_block is what block in the data store for
      *    the data packed by PainterItemShaderData::pack_data()
-     *    of the PainterItemShaderData in the \ref Painter (or
-     *    \ref PainterPacker) call; use the macro fastuidraw_fetch_data()
-     *    to read the data.
+     *    of the PainterItemShaderData in the \ref Painter call;
+     *    use the macro fastuidraw_fetch_data() to read the data.
      *
      * The output clip_p is to hold the clip-coordinate of the vertex.
      * The output brush_p is to hold the coordinate for the brush of
      * the vertex. The out z_add must be written to as well and it
      * is how much to add to the value in \ref PainterHeader::m_z
-     * (the value is the value of Painter::current_z()) for the purpose
-     * of intra-item z-occluding.
+     * for the purpose of intra-item z-occluding. Items that do
+     * not self-occlude should write 0 to z_add.
      *
      * The fragment shader code needs to implement the function:
      * \code
      *   vec4
      *   fastuidraw_gl_frag_main(in uint sub_shader,
-     *                           in uint shader_data_offset)
+     *                           inout uint shader_data_block)
      * \endcode
      *
      * which returns the color of the fragment for the item -before-
-     * the color modulation by the pen, brush or having compositing
-     * applied. In addition, the color value returned is NOT
-     * pre-multiplied by alpha either.
+     * the color modulation by the pen, brush or having blending
+     * applied. In addition, the color value returned MUST be
+     * pre-multiplied by alpha.
      *
      * Available to only the vertex shader are the following:
-     *  - mat3 fastuidraw_item_matrix (the 3x3 matrix from item coordinate to clip coordinates)
+     *  - the GLSL elements in the module \ref GLSLVertCode
+     *
+     * Available to only the fragment shader are the following:
+     *  - the GLSL elements in the module \ref GLSLFragCode
      *
      * Available to both the vertex and fragment shader are the following:
-     *  - sampler2DArray fastuidraw_imageAtlasLinear the color texels (AtlasColorBackingStoreBase) for images unfiltered
-     *  - sampler2DArray fastuidraw_imageAtlasLinearFiltered the color texels (AtlasColorBackingStoreBase) for images bilinearly filtered
-     *  - usampler2DArray fastuidraw_imageIndexAtlas the texels of the index atlas (AtlasIndexBackingStoreBase) for images
-     *  - the macro fastuidraw_fetch_data(B) to fetch the B'th block from the data store buffer
-     *    (PainterDraw::m_store), return as uvec4. To get floating point data use, the GLSL
-     *    built-in function uintBitsToFloat().
-     *  - the macro fastuidraw_fetch_glyph_data(B) to read the B'th value from the glyph data
-     *    (GlyphAtlasBackingStoreBase), return as uint. To get floating point data, use the GLSL
-     *    built-in function uintBitsToFloat().
-     *  - the macro fastuidraw_colorStopFetch(x, L) to retrieve the color stop value at location x of layer L
-     *  - vec2 fastuidraw_viewport_pixels the viewport dimensions in pixels
-     *  - vec2 fastuidraw_viewport_recip_pixels reciprocal of fastuidraw_viewport_pixels
-     *  - vec2 fastuidraw_viewport_recip_pixels_magnitude euclidean length of fastuidraw_viewport_recip_pixels
+     *  - the GLSL elements in the module \ref GLSLVertFragCode
      *
-     * For both stages, the value of the argument of shader_data_offset is which block into the data
-     * store (PainterDraw::m_store) of the custom shader data. Do
-     * \code
-     * fastuidraw_fetch_data(shader_data_offset)
-     * \endcode
-     * to read the raw bits of the data. The type returned by the macro fastuidraw_fetch_data()
+     * For both stages, the value of the argument of shader_data_block is
+     * which 128-bit block into the data store (PainterDraw::m_store) of the
+     * shader data to be read with the GLSL macro \ref fastuidraw_fetch_data.
+     * On exit, this value must be updated to the location just past the
+     * shader data of the shader.
      *
-     * Use the GLSL built-in uintBitsToFloat() to covert the uint bit-value to float
-     * and just cast int() to get the value as an integer.
+     * For both stages, the value of the argument of sub_shader() is the
+     * value of \ref PainterShader::sub_shader() of the active shader.
      *
      * Also, if one defines macros in any of the passed ShaderSource objects,
      * those macros MUST be undefined at the end. In addition, if one
@@ -423,14 +317,77 @@ namespace fastuidraw
      * to make sure that the function is given a unique global name within
      * the uber-shader.
      *
-     * Lastly, one can use the classes \ref shader_unpack_value
-     * and \ref shader_unpack_value_set to generate shader code
-     * to unpack values from the data in the data store buffer.
+     * Lastly, one can use the class \ref UnpackSourceGenerator to generate
+     * shader code to unpack values from the data in the data store buffer.
      * That machine generated code uses the macro fastuidraw_fetch_data().
      */
     class PainterItemShaderGLSL:public PainterItemShader
     {
     public:
+      /*!
+       * \brief
+       * If one wishes to make use of other \ref PainterItemShaderGLSL
+       * fastuidraw_gl_vert_main()/fastuidraw_gl_frag_main() of other shaders
+       * (for example to have a simple shader that adds on to a previous shader),
+       * a DependencyList provides the means to do so.
+       *
+       * Each such used shader is given a name by which the caller will use it.
+       * In addition, the caller has access to the varyings and shared symbols
+       * of the callee as well. A varying or shareable V of an element in the \ref
+       * DependencyList is accessed from the parent shader with dep::V where dep
+       * is the argument value of name to \ref add_shader(). Note that it is
+       * accessed with the scope-resolution operator; the uber-shader assember
+       * will convert the scope-resolution operator into acceptable GLSL code.
+       *
+       * By using the values of the shareables (embodied in fields \ref
+       * symbol_list::m_vert_shareable_values and \ref symbol_list::m_frag_shareable_values),
+       * reading and potentially modifying the values of the varyings, one can
+       * create effects building off of the built-in shaders of the GLSL module.
+       */
+      class DependencyList
+      {
+      public:
+        /*!
+         * Ctor.
+         */
+        DependencyList(void);
+
+        /*!
+         * Copy ctor.
+         * \param obj value from which to copy
+         */
+        DependencyList(const DependencyList &obj);
+
+        ~DependencyList();
+
+        /*!
+         * Assignment operator
+         * \param rhs value from which to copy
+         */
+        DependencyList&
+        operator=(const DependencyList &rhs);
+
+        /*!
+         * Swap operation
+         * \param obj object with which to swap
+         */
+        void
+        swap(DependencyList &obj);
+
+        /*!
+         * Add a shader to the DependencyList's list.
+         * \param name name by which to call the shader
+         * \param shader shader to add to this DependencyList
+         */
+        DependencyList&
+        add_shader(c_string name,
+                   const reference_counted_ptr<const PainterItemShaderGLSL> &shader);
+
+      private:
+        friend class PainterItemShaderGLSL;
+        void *m_d;
+      };
+
       /*!
        * Ctor.
        * \param puses_discard set to true if and only if the shader code
@@ -438,22 +395,105 @@ namespace fastuidraw
        *                      in the GLSL code via the macro FASTUIDRAW_DISCARD.
        * \param vertex_src GLSL source holding vertex shader routine
        * \param fragment_src GLSL source holding fragment shader routine
-       * \param varyings list of varyings of the shader
+       * \param symbols list of symbols of the shader
        * \param num_sub_shaders the number of sub-shaders it supports
+       * \param cvg the coverage shader (if any) to be used by the item shader
+       * \param dependencies list of other \ref PainterItemShaderGLSL that are
+       *                     used directly.
        */
       PainterItemShaderGLSL(bool puses_discard,
                             const ShaderSource &vertex_src,
                             const ShaderSource &fragment_src,
-                            const varying_list &varyings,
+                            const symbol_list &symbols,
+                            unsigned int num_sub_shaders = 1,
+                            const reference_counted_ptr<PainterItemCoverageShaderGLSL> &cvg =
+                            reference_counted_ptr<PainterItemCoverageShaderGLSL>(),
+                            const DependencyList &dependencies = DependencyList());
+
+      /*!
+       * Ctor.
+       * \param puses_discard set to true if and only if the shader code
+       *                      will use discard. Discard should be used
+       *                      in the GLSL code via the macro FASTUIDRAW_DISCARD.
+       * \param vertex_src GLSL source holding vertex shader routine
+       * \param fragment_src GLSL source holding fragment shader routine
+       * \param symbols list of symbols of the shader
+       * \param num_sub_shaders the number of sub-shaders it supports
+       * \param cvg the coverage shader (if any) to be used by the item shader
+       * \param dependencies list of other \ref PainterItemShaderGLSL that are
+       *                     used directly.
+       */
+      PainterItemShaderGLSL(bool puses_discard,
+                            const ShaderSource &vertex_src,
+                            const ShaderSource &fragment_src,
+                            const symbol_list &symbols,
+                            const reference_counted_ptr<PainterItemCoverageShaderGLSL> &cvg,
+                            const DependencyList &dependencies = DependencyList(),
                             unsigned int num_sub_shaders = 1);
+
+      /*!
+       * Ctor.
+       * \param puses_discard set to true if and only if the shader code
+       *                      will use discard. Discard should be used
+       *                      in the GLSL code via the macro FASTUIDRAW_DISCARD.
+       * \param vertex_src GLSL source holding vertex shader routine
+       * \param fragment_src GLSL source holding fragment shader routine
+       * \param symbols list of symbols of the shader
+       * \param num_sub_shaders the number of sub-shaders it supports
+       * \param cvg the coverage shader (if any) to be used by the item shader
+       * \param dependencies list of other \ref PainterItemShaderGLSL that are
+       *                     used directly.
+       */
+      PainterItemShaderGLSL(bool puses_discard,
+                            const ShaderSource &vertex_src,
+                            const ShaderSource &fragment_src,
+                            const symbol_list &symbols,
+                            const DependencyList &dependencies,
+                            const reference_counted_ptr<PainterItemCoverageShaderGLSL> &cvg =
+                            reference_counted_ptr<PainterItemCoverageShaderGLSL>(),
+                            unsigned int num_sub_shaders = 1);
+
+      /*!
+       * Ctor.
+       * \param puses_discard set to true if and only if the shader code
+       *                      will use discard. Discard should be used
+       *                      in the GLSL code via the macro FASTUIDRAW_DISCARD.
+       * \param vertex_src GLSL source holding vertex shader routine
+       * \param fragment_src GLSL source holding fragment shader routine
+       * \param symbols list of symbols of the shader
+       * \param num_sub_shaders the number of sub-shaders it supports
+       * \param cvg the coverage shader (if any) to be used by the item shader
+       * \param dependencies list of other \ref PainterItemShaderGLSL that are
+       *                     used directly.
+       */
+      PainterItemShaderGLSL(bool puses_discard,
+                            const ShaderSource &vertex_src,
+                            const ShaderSource &fragment_src,
+                            const symbol_list &symbols,
+                            const DependencyList &dependencies,
+                            unsigned int num_sub_shaders,
+                            const reference_counted_ptr<PainterItemCoverageShaderGLSL> &cvg =
+                            reference_counted_ptr<PainterItemCoverageShaderGLSL>());
 
       ~PainterItemShaderGLSL();
 
       /*!
-       * Returns the varying of the shader
+       * Returns the symbol of the shader
+       */
+      const symbol_list&
+      symbols(void) const;
+
+      /*!
+       * Returns the varyings of the shader, equivalent to
+       * \code
+       * symbols().m_varying_list;
+       * \endcode
        */
       const varying_list&
-      varyings(void) const;
+      varyings(void) const
+      {
+        return symbols().m_varying_list;
+      }
 
       /*!
        * Return the GLSL source of the vertex shader
@@ -473,6 +513,22 @@ namespace fastuidraw
       bool
       uses_discard(void) const;
 
+      /*!
+       * Return the list of shaders on which this shader is dependent.
+       */
+      c_array<const reference_counted_ptr<const PainterItemShaderGLSL> >
+      dependency_list_shaders(void) const;
+
+      /*!
+       * Returns the names that each shader listed in \ref
+       * dependency_list_shaders() is referenced by, i.e.
+       * the i'th element of dependency_list_shaders() is
+       * referenced as the i'th element of \ref
+       * dependency_list_names().
+       */
+      c_array<const c_string>
+      dependency_list_names(void) const;
+
     private:
       void *m_d;
     };
@@ -480,3 +536,5 @@ namespace fastuidraw
 
   }
 }
+
+#endif

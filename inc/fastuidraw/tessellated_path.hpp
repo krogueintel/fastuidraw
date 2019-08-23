@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,15 +12,17 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_TESSELLATED_PATH_HPP
+#define FASTUIDRAW_TESSELLATED_PATH_HPP
 
 
 #include <fastuidraw/util/fastuidraw_memory.hpp>
+#include <fastuidraw/util/rect.hpp>
 #include <fastuidraw/util/vecN.hpp>
 #include <fastuidraw/util/c_array.hpp>
 #include <fastuidraw/util/reference_counted.hpp>
@@ -32,6 +34,7 @@ namespace fastuidraw  {
 class Path;
 class StrokedPath;
 class FilledPath;
+class PartitionedTessellatedPath;
 ///@endcond
 
 /*!\addtogroup Paths
@@ -78,6 +81,38 @@ public:
        * i.e. it connects two point via a line.
        */
       line_segment,
+    };
+
+  /*!
+   * Enumeration to describe if a segment is split
+   */
+  enum split_t
+    {
+      /*!
+       * Indicates that entire segment is before
+       * the split value
+       */
+      segment_completey_before_split,
+
+      /*!
+       * Indicates that entire segment is after
+       * the split value
+       */
+      segment_completey_after_split,
+
+      /*!
+       * indicates that the \ref segment was split
+       * with the segment starting before the split
+       * point.
+       */
+      segment_split_start_before,
+
+      /*!
+       * indicates that the \ref segment was split
+       * with the segment starting after the split
+       * point.
+       */
+      segment_split_start_after,
     };
 
   /*!
@@ -219,12 +254,378 @@ public:
     vec2 m_leaving_segment_unit_vector;
 
     /*!
-     * If true, indicates that the arc is tangent with its
-     * predecessor. This happens when TessellatedPath breaks
-     * a \ref segment into smaller pieces to make its angle
-     * smaller or to make it monotonic.
+     * If true, indicates that the arc is a continuation of
+     * its predecessor. This happens when TessellatedPath
+     * breaks a \ref segment into smaller pieces to make its
+     * angle smaller, to make it monotonic or if it is the
+     * second portion of a split segment as calculated from
+     * \ref compute_split_x() or \ref compute_split_y().
      */
-    bool m_tangent_with_predecessor;
+    bool m_continuation_with_predecessor;
+
+    /*!
+     * The contour from which the \ref segment originates,
+     * i.e. the \ref segment originates from the \ref
+     * PathContour::interpolator_base \ref
+     * PathContour::interpolator(\ref m_edge_id) of the
+     * \ref PathContour of \ref Path::contour(\ref m_contour_id).
+     */
+    unsigned int m_contour_id;
+
+    /*!
+     * The edge from which the \ref segment originates,
+     * i.e. the \ref segment originates from the \ref
+     * PathContour::interpolator_base \ref
+     * PathContour::interpolator(\ref m_edge_id) of the
+     * \ref PathContour of \ref Path::contour(\ref m_contour_id).
+     */
+    unsigned int m_edge_id;
+
+    /*!
+     * Indicates the this segment is the first segment of
+     * an edge
+     */
+    bool m_first_segment_of_edge;
+
+    /*!
+     * Indicates the this segment is the last segment of
+     * an edge
+     */
+    bool m_last_segment_of_edge;
+
+    /*!
+     * Returns the normal vector to the path at the start of the segment.
+     */
+    vec2
+    enter_segment_normal(void) const
+    {
+      return vec2(-m_enter_segment_unit_vector.y(),
+                  +m_enter_segment_unit_vector.x());
+    }
+
+    /*!
+     * Returns the normal vector to the path at the end of the segment.
+     */
+    vec2
+    leaving_segment_normal(void) const
+    {
+      return vec2(-m_leaving_segment_unit_vector.y(),
+                  +m_leaving_segment_unit_vector.x());
+    }
+
+    /*!
+     * Split this \ref segment at a time t where the start
+     * of the segment is at t = 0 and the end of the segment
+     * is t = 1.
+     * \param t time to split the segment, must have that 0 <= t <= 1
+     * \param dst_0_t location to which to write the portion of
+     *                this \ref segment on the interval [0, t].
+     * \param dst_t_1 location to which to write the portion of
+     *                this \ref segment on the interval [t, 1].
+     */
+    void
+    split_segment(float t,
+                  segment *dst_0_t,
+                  segment *dst_t_1) const;
+
+    /*!
+     * Compute the splitting splitting of this \ref segment
+     * against a vertical line with the given x-coordinate
+     * \param x_split x-coordinate of vertical splitting line
+     * \param dst_before_split location to which to write
+     *                         the portion of the segment that
+     *                         comes before the splitting line
+     * \param dst_after_split location to which to write
+     *                         the portion of the segment that
+     *                         comes after the splitting line
+     * \returns how the segment was split. Note that if the return
+     *          value is \ref segment_completey_before_split or
+     *          \ref segment_completey_after_split then neither
+     *          of dst_before_split and dst_after_split are
+     *          written to.
+     */
+    enum split_t
+    compute_split_x(float x_split,
+                    segment *dst_before_split,
+                    segment *dst_after_split) const;
+
+    /*!
+     * Compute the splitting splitting of this \ref segment
+     * against a horizontal line with the given y-coordinate
+     * \param y_split y-coordinate of horizontal splitting line
+     * \param dst_before_split location to which to write
+     *                         the portion of the segment that
+     *                         comes before the splitting line
+     * \param dst_after_split location to which to write
+     *                         the portion of the segment that
+     *                         comes after the splitting line
+     * \returns how the segment was split. Note that if the return
+     *          value is \ref segment_completey_before_split or
+     *          \ref segment_completey_after_split then neither
+     *          of dst_before_split and dst_after_split are
+     *          written to.
+     */
+    enum split_t
+    compute_split_y(float y_split,
+                    segment *dst_before_split,
+                    segment *dst_after_split) const;
+
+    /*!
+     * Compute the splitting splitting of this \ref segment
+     * against a horizontal or vertical line with the given
+     * coordinate. Provided as a conveniance, equivalent to
+     * \code
+     * if (splitting_coordinate == 0)
+     *  {
+     *     compute_split_x(split, dst_before_split, dst_after_split);
+     *  }
+     * else
+     *  {
+     *     compute_split_y(split, dst_before_split, dst_after_split);
+     *  }
+     * \endcode
+     * \param split x-coordinate or y-coordinate of splitting line
+     * \param dst_before_split location to which to write
+     *                         the portion of the segment that
+     *                         comes before the splitting line
+     * \param dst_after_split location to which to write
+     *                         the portion of the segment that
+     *                         comes after the splitting line
+     * \param splitting_coordinate determines if to split by a vertical
+     *                             line or a horizontal line.
+     * \returns how the segment was split. Note that if the return
+     *          value is \ref segment_completey_before_split or
+     *          \ref segment_completey_after_split then neither
+     *          of dst_before_split and dst_after_split are
+     *          written to.
+     */
+    enum split_t
+    compute_split(float split,
+                  segment *dst_before_split,
+                  segment *dst_after_split,
+                  int splitting_coordinate) const;
+  };
+
+  /*!
+   * A \ref segment_chain is a sequence of \ref
+   * segment values where successive elements are
+   * neighbors of the same edge in the source \ref
+   * Path. It is possible to split edges and keep
+   * neighbor information via the field \ref
+   * m_prev_to_start
+   */
+  class segment_chain
+  {
+  public:
+    /*!
+     * The chain of \ref segment values
+     */
+    c_array<const segment> m_segments;
+
+    /*!
+     * if non-null, gives the segment just
+     * before the first element of \ref
+     * m_segments. If null, then there is
+     * no segment just before \ref m_segments.
+     */
+    const segment *m_prev_to_start;
+  };
+
+  /*!
+   * \brief
+   * Represents the geometric data for a join
+   */
+  class join
+  {
+  public:
+    /*!
+     * Default ctor that does NOT initialize any of the fields
+     * of \ref join
+     */
+    join(void)
+    {}
+
+    /*!
+     * Ctor that initializes the values of a join to be the
+     * values of where two \ref segment values meet.
+     * \param into_join the \ref segment value into the join,
+     *                  it is required that into_join.m_end_pt
+     *                  has the same value as from_join.m_start_pt
+     * \param from_join the \ref segment value leaving from the join,
+     *                  it is required that into_join.m_end_pt
+     *                  has the same value as from_join.m_start_pt
+     */
+    join(const segment &into_join,
+         const segment &from_join);
+
+    /*!
+     * Gives the position of the join
+     */
+    vec2 m_position;
+
+    /*!
+     * Gives the unit-vector of the path entering the join.
+     */
+    vec2 m_enter_join_unit_vector;
+
+    /*!
+     * Gives the unit-vector of the path leaving the join.
+     */
+    vec2 m_leaving_join_unit_vector;
+
+    /*!
+     * Gives the distance of the join from the previous join.
+     */
+    float m_distance_from_previous_join;
+
+    /*!
+     * Gives the distance of the join from the start
+     * of the -contour- on which the point resides.
+     */
+    float m_distance_from_contour_start;
+
+    /*!
+     * Length of the contour on which the join resides.
+     */
+    float m_contour_length;
+
+    /*!
+     * Gives the contour from which the join originates,
+     * following the same convention as \ref
+     * segment::m_contour_id.
+     */
+    unsigned int m_contour_id;
+
+    /*!
+     * Gives the interpolator that goes into the join,
+     * following the same convention as \ref
+     * segment::m_edge_id.
+     */
+    unsigned int m_edge_into_join_id;
+
+    /*!
+     * Gives the interpolator that leaves the join,
+     * following the same convention as \ref
+     * segment::m_edge_id.
+     */
+    unsigned int m_edge_leaving_join_id;
+
+    /*!
+     * When stroking a join, one needs to know what side of the
+     * edge gets the join. For example a bevel join is formed by
+     * the triangle formed from the three points: the outer edge
+     * at the join of the segment going into the join, the outer
+     * edge of the segment leaving the join and the point where
+     * the segments meet. The value of lambda() gives the sign to
+     * apply to \ref enter_join_normal() and \ref leaving_join_normal()
+     * to get the unit vector from where the segments meet to the
+     * outer edge.
+     */
+    float m_lambda;
+
+    /*!
+     * If this join is realized as a miter-join, returns the distance
+     * from the point of the join (i.e. where the segments intersect)
+     * to the tip of the miter join. If the path enter and leaving
+     * the join are parallel or anti-parallel, then return -1.0.
+     */
+    float m_miter_distance;
+
+    /*!
+     * This gives the angle (in degrees) between the start and
+     * end points of the join.
+     */
+    float m_join_angle;
+
+    /*!
+     * Gives the normal vector to going into the join
+     */
+    vec2
+    enter_join_normal(void) const
+    {
+      return vec2(-m_enter_join_unit_vector.y(), m_enter_join_unit_vector.x());
+    }
+
+    /*!
+     * Gives the normal vector to leaving from the join
+     */
+    vec2
+    leaving_join_normal(void) const
+    {
+      return vec2(-m_leaving_join_unit_vector.y(), m_leaving_join_unit_vector.x());
+    }
+  };
+
+  /*!
+   * \brief
+   * Represents the geometric data for a cap
+   */
+  class cap
+  {
+  public:
+    /*!
+     * Default ctor that does NOT initialize any of the fields
+     * of \ref cap
+     */
+    cap(void)
+    {}
+
+    /*!
+     * Ctor that initializes the values of a cap to be values
+     * of where a segment starts or ends.
+     * \param seg the \ref segment value
+     * \param is_start_cap if true indicates to give the cap
+     *                     the value as a cap at the start of
+     *                     the \ref segment, if false, then at
+     *                     the end of the \ref segment.
+     */
+    cap(const segment &seg, bool is_start_cap);
+
+    /*!
+     * Gives the position of the cap
+     */
+    vec2 m_position;
+
+    /*!
+     * Gives the unit-vector into the cap
+     */
+    vec2 m_unit_vector;
+
+    /*!
+     * Length of the contour on which the cap resides.
+     */
+    float m_contour_length;
+
+    /*!
+     * Length of the edge on which the cap resides.
+     */
+    float m_edge_length;
+
+    /*!
+     * Gives the distance of the cap from the start of the edge
+     * on which the cap resides.
+     */
+    float m_distance_from_edge_start;
+
+    /*!
+     * Gives the distance of the cap start of the -contour-.
+     * For \ref cap values of a \ref TessellatedPath, this is
+     * 0 for a starting cap and \ref m_contour_length for
+     * an ending cap.
+     */
+    float m_distance_from_contour_start;
+
+    /*!
+     * True if the cap is from the start of a contour
+     */
+    bool m_is_starting_cap;
+
+    /*!
+     * Gives the contour from which the join originates,
+     * following the same convention as \ref
+     * segment::m_contour_id.
+     */
+    unsigned int m_contour_id;
   };
 
   /*!
@@ -251,7 +652,7 @@ public:
      * arc segment. If necessary, An arc-segment will be broken
      * into multiple segments to that each segment is monotonic
      * in the x and y coordiantes and each segment's arc-angle
-     * is no more than M_PI / 4.0 radians (45 degrees).
+     * is no more than FASTUIDRAW_PI / 4.0 radians (45 degrees).
      * \param start gives the start point of the arc on the path
      * \param end gives the end point of the arc on the path
      * \param center is the center of the circle that defines the arc
@@ -349,10 +750,29 @@ public:
   max_recursion(void) const;
 
   /*!
-   * Returns all the segment data
+   * Returns all the segment data of the entire path.
    */
   c_array<const segment>
   segment_data(void) const;
+
+  /*!
+   * Returns the array of \ref segment_chain objects
+   * of the entire path.
+   */
+  c_array<const segment_chain>
+  segment_chain_data(void) const;
+
+  /*!
+   * Returns all the join data
+   */
+  c_array<const join>
+  join_data(void) const;
+
+  /*!
+   * Returns all the cap data
+   */
+  c_array<const cap>
+  cap_data(void) const;
 
   /*!
    * Returns the number of contours
@@ -388,6 +808,15 @@ public:
    */
   c_array<const segment>
   contour_segment_data(unsigned int contour) const;
+
+  /*!
+   * Returns the array of \ref segment_chain objects
+   * of a contour.
+   * \param contour which path contour to query, must have
+   *                that 0 <= contour < number_contours()
+   */
+  c_array<const segment_chain>
+  contour_chains(unsigned int contour) const;
 
   /*!
    * Returns the number of edges for the named contour
@@ -435,25 +864,22 @@ public:
   edge_type(unsigned int contour, unsigned int edge) const;
 
   /*!
-   * Returns the minimum point of the bounding box of
-   * the tessellation.
+   * Returns the named edge as a \ref segment_chain taking
+   * correctly into account the value of \ref edge_type()
+   * in setting \ref segment_chain::m_prev_to_start.
+   * \param contour which path contour to query, must have
+   *                that 0 <= contour < number_contours()
+   * \param edge which edge of the contour to query, must
+   *             have that 0 <= edge < number_edges(contour)
    */
-  vec2
-  bounding_box_min(void) const;
+  segment_chain
+  edge_segment_chain(unsigned int contour, unsigned int edge) const;
 
   /*!
-   * Returns the maximum point of the bounding box of
-   * the tessellation.
+   * Returns the bounding box of the tessellation.
    */
-  vec2
-  bounding_box_max(void) const;
-
-  /*!
-   * Returns the dimensions of the bounding box
-   * of the tessellated path.
-   */
-  vec2
-  bounding_box_size(void) const;
+  const Rect&
+  bounding_box(void) const;
 
   /*!
    * Returns this \ref TessellatedPath where any arcs are
@@ -464,7 +890,7 @@ public:
    * \param thresh threshhold at which to linearize
    *               arc-segments.
    */
-  const TessellatedPath*
+  const TessellatedPath&
   linearization(float thresh) const;
 
   /*!
@@ -474,14 +900,14 @@ public:
    * linearization(-1.0f)
    * \endcode
    */
-  const TessellatedPath*
+  const TessellatedPath&
   linearization(void) const;
 
   /*!
    * Returns this \ref TessellatedPath stroked. The \ref
    * StrokedPath object is constructed lazily.
    */
-  const reference_counted_ptr<const StrokedPath>&
+  const StrokedPath&
   stroked(void) const;
 
   /*!
@@ -495,7 +921,7 @@ public:
    * \param thresh threshhold at which to linearize
    *               arc-segments.
    */
-  const reference_counted_ptr<const FilledPath>&
+  const FilledPath&
   filled(float thresh) const;
 
   /*!
@@ -505,8 +931,14 @@ public:
    * filled(-1.0f)
    * \endcode
    */
-  const reference_counted_ptr<const FilledPath>&
+  const FilledPath&
   filled(void) const;
+
+  /*!
+   * Returns the partitioning of this \ref TessellatedPath.
+   */
+  const PartitionedTessellatedPath&
+  partitioned(void) const;
 
 private:
   TessellatedPath(Refiner *p, float threshhold,
@@ -521,3 +953,5 @@ private:
 /*! @} */
 
 }
+
+#endif

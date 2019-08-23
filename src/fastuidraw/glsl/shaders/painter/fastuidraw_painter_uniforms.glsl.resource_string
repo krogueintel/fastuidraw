@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,77 +12,85 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-//////////////////////////////////////////////
-// Color Stop Atlas
-#ifdef FASTUIDRAW_PAINTER_COLORSTOP_ATLAS_2D_ARRAY
+/*!\addtogroup GLSLVertFragCode
+ * @{
+ */
+#ifdef GLSL_DOXYGEN
 
-  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_COLORSTOP_ATLAS_BINDING) uniform sampler2DArray fastuidraw_colorStopAtlas;
-  #define fastuidraw_colorStopFetch(x, L) textureLod(fastuidraw_colorStopAtlas, vec3(float(x), 0.0, float(L)), 0.0)
-
-#else
-
-  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_COLORSTOP_ATLAS_BINDING) uniform sampler1DArray fastuidraw_colorStopAtlas;
-  #define fastuidraw_colorStopFetch(x, L) textureLod(fastuidraw_colorStopAtlas, vec2(float(x), float(L)), 0.0)
-
-#endif
-///////////////////////////////////////////////
-
-
-//////////////////////////////////////////////////
-// Image Atlas
-FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_COLOR_TILE_LINEAR_BINDING) uniform sampler2DArray fastuidraw_imageAtlasLinear;
-FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_COLOR_TILE_NEAREST_BINDING) uniform sampler2DArray fastuidraw_imageAtlasNearest;
-FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_INDEX_TILE_BINDING) uniform usampler2DArray fastuidraw_imageIndexAtlas;
-//////////////////////////////////////////////////
-
-///////////////////////////////////////////////////
-// Glyph Atlas  Store
-#ifdef FASTUIDRAW_GLYPH_DATA_STORE_SSBO
-
-  FASTUIDRAW_LAYOUT_BINDING_ARGS(FASTUIDRAW_GLYPH_DATA_STORE_BINDING, std430) restrict readonly buffer fastuidraw_glyphDataStore
-  {
-    uint fastuidraw_glyphDataStore_data[];
-  };
-  #define fastuidraw_fetch_glyph_data(X) (fastuidraw_glyphDataStore_data[int(X)])
-
-#elif defined(FASTUIDRAW_GLYPH_DATA_STORE_TEXTURE_ARRAY)
-
-  /* The width and height of fastuidraw_glyphDataStore are
-   * powers of 2, the values given by FASTUIDRAW_GLYPH_DATA_WIDTH_LOG2
-   * and FASTUIDRAW_GLYPH_DATA_HEIGHT_LOG2. We want to use
-   * bit shifts and masking to get the correct layer, height and so on.
+  /*!
+   * \def FASTUIDRAW_PAINTER_NUMBER_CONTEXT_TEXTURES
+   * The maximum number of simutaneous bound textures that the shader
+   * supports, i.e. the value of \ref
+   * fastuidraw::PainterEngine::ConfigurationBase::number_context_textures().
    */
-  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_GLYPH_DATA_STORE_BINDING) uniform usampler2DArray fastuidraw_glyphDataStore;
-  #define FASTUIDRAW_GLYPH_DATA_WIDTH_PLUS_HEIGHT_LOG2 uint(FASTUIDRAW_GLYPH_DATA_WIDTH_LOG2 + FASTUIDRAW_GLYPH_DATA_HEIGHT_LOG2)
-  #define FASTUIDRAW_GLYPH_DATA_LAYER(T) (uint(T) >> FASTUIDRAW_GLYPH_DATA_WIDTH_PLUS_HEIGHT_LOG2)
-  #define FASTUIDRAW_GLYPH_DATA_Y(T) FASTUIDRAW_EXTRACT_BITS(FASTUIDRAW_GLYPH_DATA_WIDTH_LOG2, FASTUIDRAW_GLYPH_DATA_HEIGHT_LOG2, T)
-  #define FASTUIDRAW_GLYPH_DATA_X(T) FASTUIDRAW_EXTRACT_BITS(0, FASTUIDRAW_GLYPH_DATA_WIDTH_LOG2, T)
-  #define FASTUIDRAW_GLYPH_DATA_COORD(v) ivec3(FASTUIDRAW_GLYPH_DATA_X(v), FASTUIDRAW_GLYPH_DATA_Y(v), FASTUIDRAW_GLYPH_DATA_LAYER(v))
-  #define fastuidraw_fetch_glyph_data(X) (texelFetch(fastuidraw_glyphDataStore, FASTUIDRAW_GLYPH_DATA_COORD(X), 0).r)
+  #define FASTUIDRAW_PAINTER_NUMBER_CONTEXT_TEXTURES
 
-#else
+  /*!
+   * The array of \ref fastuidraw::Image objects whose \ref fastuidraw::Image::type()
+   * has value \ref fastuidraw::Image::context_texture2d that are currently bound.
+   * For \ref fastuidraw::PainterBrush if it has such an image, it is always bound
+   * to fastuidraw_context_texture[0] and for \ref fastuidraw::PainterBrushShaderData,
+   * the i'th index into \ref fastuidraw::PainterBrushShaderData is bound to
+   * fastuidraw_context_texture[i]
+   */
+  uniform sampler2D fastuidraw_context_texture[FASTUIDRAW_PAINTER_NUMBER_CONTEXT_TEXTURES];
 
-  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_GLYPH_DATA_STORE_BINDING) uniform usamplerBuffer fastuidraw_glyphDataStore;
-  #define fastuidraw_fetch_glyph_data(X) (texelFetch(fastuidraw_glyphDataStore, int(X)).r)
+  /*!
+   * \def FASTUIDRAW_SUPPORT_BINDLESS_TEXTURE
+   * If this macro is defined, then bindless texturing is supported.
+   * Bindless texturing allows one to create sampler object handles
+   * from 64-bit uint data. See \ref FASTUIDRAW_BINDLESS_HANDLE_UVEC2
+   * and \ref FASTUIDRAW_BINDLESS_HANDLE_128U for how the GLSL
+   * implementation realizes the 64-bit handle values.
+   */
+  #define FASTUIDRAW_SUPPORT_BINDLESS_TEXTURE
 
+  /*!
+   * \def FASTUIDRAW_BINDLESS_HANDLE_UVEC2
+   * If this macro is defined, then bindless texturing is supported
+   * (see \ref FASTUIDRAW_SUPPORT_BINDLESS_TEXTURE) and the 64-bit
+   * handle from which to construct sampler handles is realized as
+   * a uvec2 where the low 32-bits are in the .x component and the
+   * high 32-bits are in the .y component.
+   */
+  #define FASTUIDRAW_BINDLESS_HANDLE_UVEC2
+
+  /*!
+   * \def FASTUIDRAW_BINDLESS_HANDLE_128U
+   * If this macro is defined, then bindless texturing is supported
+   * (see \ref FASTUIDRAW_SUPPORT_BINDLESS_TEXTURE) and the 64-bit
+   * handle from which to construct sampler handles is realized as
+   * a uint64_t.
+   */
+  #define FASTUIDRAW_BINDLESS_HANDLE_128U
+
+  /*!
+   * \def fastuidraw_fetch_data(X)
+   * Use this macro to fetch a single 128-bit value from the data
+   * store bufferrealized as a uvec4. To get floating point data,
+   * use the GLSL built-in function uintBitsToFloat().
+   * \param X offset into data store buffer
+   */
+  #define fastuidraw_fetch_data(X)
 #endif
-////////////////////////////////////////////////////
+/*! @} */
 
+///@cond
 
 ///////////////////////////////////////
 // Painter Data Store
 #ifdef FASTUIDRAW_PAINTER_USE_DATA_TBO
 
-  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_PAINTER_STORE_TBO_BINDING) uniform usamplerBuffer fastuidraw_painterStore_tbo;
+  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_PAINTER_STORE_BINDING) uniform usamplerBuffer fastuidraw_painterStore_tbo;
   #define fastuidraw_fetch_data(block) texelFetch(fastuidraw_painterStore_tbo, int(block))
 
 #elif defined(FASTUIDRAW_PAINTER_USE_DATA_SSBO)
 
-  FASTUIDRAW_LAYOUT_BINDING_ARGS(FASTUIDRAW_PAINTER_STORE_SSBO_BINDING, std430) restrict readonly buffer fastuidraw_painterStore_ssbo
+  FASTUIDRAW_LAYOUT_BINDING_ARGS(FASTUIDRAW_PAINTER_STORE_BINDING, std430) restrict readonly buffer fastuidraw_painterStore_ssbo
   {
     uvec4 fastuidraw_painterStore[];
   };
@@ -90,7 +98,7 @@ FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_INDEX_TILE_BINDING) uniform usampler2DArray
 
 #elif defined(FASTUIDRAW_PAINTER_USE_DATA_UBO)
 
-  FASTUIDRAW_LAYOUT_BINDING_ARGS(FASTUIDRAW_PAINTER_STORE_UBO_BINDING, std140) uniform fastuidraw_painterStore_ubo
+  FASTUIDRAW_LAYOUT_BINDING_ARGS(FASTUIDRAW_PAINTER_STORE_BINDING, std140) uniform fastuidraw_painterStore_ubo
   {
     uvec4 fastuidraw_painterStore[FASTUIDRAW_PAINTER_DATA_STORE_ARRAY_SIZE];
   };
@@ -98,4 +106,6 @@ FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_INDEX_TILE_BINDING) uniform usampler2DArray
 
 #endif
 
-FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_PAINTER_EXTERNAL_TEXTURE_BINDING) uniform sampler2D fastuidraw_external_texture;
+FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_PAINTER_CONTEXT_TEXTURE_BINDING) uniform sampler2D fastuidraw_context_texture[FASTUIDRAW_PAINTER_NUMBER_CONTEXT_TEXTURES];
+
+///@endcond

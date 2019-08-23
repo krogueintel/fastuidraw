@@ -4,14 +4,10 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 # End standard header
 
-
-dir := $(d)/glyph
-include $(dir)/Rules.mk
-
 dir := $(d)/brush
 include $(dir)/Rules.mk
 
-dir := $(d)/composite
+dir := $(d)/glyph
 include $(dir)/Rules.mk
 
 dir := $(d)/blend
@@ -20,13 +16,16 @@ include $(dir)/Rules.mk
 FASTUIDRAW_RESOURCE_STRING += $(call filelist, \
 	fastuidraw_painter_globals.vert.glsl.resource_string \
 	fastuidraw_painter_main.vert.glsl.resource_string \
+	fastuidraw_painter_main_deferred_coverage.vert.glsl.resource_string \
+	fastuidraw_painter_clipping.vert.glsl.resource_string \
+	fastuidraw_painter_clipping.frag.glsl.resource_string \
 	fastuidraw_painter_types.glsl.resource_string \
 	fastuidraw_painter_forward_declares.vert.glsl.resource_string \
 	fastuidraw_painter_uniforms.glsl.resource_string \
-	fastuidraw_painter_auxiliary_image_buffer.glsl.resource_string \
 	fastuidraw_painter_forward_declares.frag.glsl.resource_string \
-	fastuidraw_painter_globals.frag.glsl.resource_string \
 	fastuidraw_painter_main.frag.glsl.resource_string \
+	fastuidraw_painter_main_deferred_coverage.frag.glsl.resource_string \
+	fastuidraw_painter_deferred_coverage_buffer.frag.glsl.resource_string \
 	fastuidraw_painter_stroke_util.vert.glsl.resource_string \
 	fastuidraw_painter_stroke_util.frag.glsl.resource_string \
 	fastuidraw_painter_stroke_util.constants.glsl.resource_string \

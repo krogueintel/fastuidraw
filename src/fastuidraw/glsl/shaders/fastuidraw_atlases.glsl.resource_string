@@ -1,0 +1,142 @@
+/*!
+ * \file fastuidraw_atlases.glsl.resource_string
+ * \brief file fastuidraw_atlases.glsl.resource_string
+ *
+ * Copyright 2018 by Intel.
+ *
+ * Contact: kevin.rogovin@gmail.com
+ *
+ * This Source Code Form is subject to the
+ * terms of the Mozilla Public License, v. 2.0.
+ * If a copy of the MPL was not distributed with
+ * this file, You can obtain one at
+ * http://mozilla.org/MPL/2.0/.
+ *
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
+ *
+ */
+
+/*!\addtogroup GLSLVertFragCode
+ * @{
+ */
+
+#ifdef GLSL_DOXYGEN
+  /*!
+   * \def fastuidraw_colorStopFetch(x, L)
+   * Use this macro to read a color value from the colorstop atlas
+   * (see \ref fastuidraw::ColorStopAtlas). Recall that colorstops
+   * are stored as part of a GL_TEXTURE_1D_ARRAY or GL_TEXTURE_2D_ARRAY
+   * and that the interpolation of the color is to be handled by the
+   * the sampler.
+   * \param x texture coordinate (i.e. normalized to [0, 1]) to read from the atlas
+   * \param L which layer to read from the atlas
+   */
+  #define fastuidraw_colorStopFetch(x, L)
+
+  /*!
+   * The sampler2Darray that backs the color tiles  of the image
+   * atlas (\ref fastuidraw::ImageAtlas) whose magnification filtering
+   * is set to GL_LINEAR and whose minification filtering is set to
+   * GL_LINEAR_MIPMAP_NEAREST.
+   */
+  uniform sampler2DArray fastuidraw_imageAtlasLinear;
+
+  /*!
+   * The sampler2Darray that backs the color tiles of the image
+   * atlas (\ref fastuidraw::ImageAtlas) whose magnification and
+   * minification filtering are set to GL_NEAREST.
+   */
+  uniform sampler2DArray fastuidraw_imageAtlasNearest;
+
+  /*!
+   * The usampler2DArray that backes index tiles of the image
+   * atlas (\ref fastuidraw::ImageAtlas).
+   */
+  uniform usampler2DArray fastuidraw_imageIndexAtlas;
+
+  /*!
+   * \def fastuidraw_fetch_glyph_data(X)
+   * Use this macro to read a single 32-bit value from the glyph atlas
+   * (\ref fastuidraw::GlyphAtlas).
+   * \param X offset into the glyph atlas to read
+   */
+  #define fastuidraw_fetch_glyph_data(X)
+
+  /*!
+   * \def fastuidraw_fetch_glyph_data_fp16x2(X)
+   * Use this macro to read a single 32-bit value  from the glyph atlas
+   * (\ref fastuidraw::GlyphAtlas) interpreted as a vec2 of 16-bit floats.
+   * \param X offset into the glyph atlas to read
+   */
+  #define fastuidraw_fetch_glyph_data_fp16x2(X)
+
+#endif
+/*! @} */
+
+///@cond
+
+//////////////////////////////////////////////
+// Color Stop Atlas
+#ifdef FASTUIDRAW_PAINTER_COLORSTOP_ATLAS_2D_ARRAY
+
+  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_COLORSTOP_ATLAS_BINDING) uniform sampler2DArray fastuidraw_colorStopAtlas;
+  #define fastuidraw_colorStopFetch(x, L) textureLod(fastuidraw_colorStopAtlas, vec3(float(x), 0.0, float(L)), 0.0)
+
+#else
+
+  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_COLORSTOP_ATLAS_BINDING) uniform sampler1DArray fastuidraw_colorStopAtlas;
+  #define fastuidraw_colorStopFetch(x, L) textureLod(fastuidraw_colorStopAtlas, vec2(float(x), float(L)), 0.0)
+
+#endif
+///////////////////////////////////////////////
+
+
+//////////////////////////////////////////////////
+// Image Atlas
+#ifndef FASTUIDRAW_IMAGE_ATLAS_DISABLED
+  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_COLOR_TILE_LINEAR_BINDING) uniform sampler2DArray fastuidraw_imageAtlasLinear;
+  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_COLOR_TILE_NEAREST_BINDING) uniform sampler2DArray fastuidraw_imageAtlasNearest;
+  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_INDEX_TILE_BINDING) uniform usampler2DArray fastuidraw_imageIndexAtlas;
+#endif
+//////////////////////////////////////////////////
+
+///////////////////////////////////////////////////
+// Glyph Atlas  Store
+#ifdef FASTUIDRAW_GLYPH_DATA_STORE_SSBO
+
+  FASTUIDRAW_LAYOUT_BINDING_ARGS(FASTUIDRAW_GLYPH_DATA_STORE_BINDING, std430) restrict readonly buffer fastuidraw_glyphDataStore
+  {
+    uint fastuidraw_glyphDataStore_data[];
+  };
+  #define fastuidraw_fetch_glyph_data(X) (fastuidraw_glyphDataStore_data[int(X)])
+  #define fastuidraw_fetch_glyph_data_fp16x2(X) fastuidraw_unpackHalf2x16(fastuidraw_glyphDataStore_data[int(X)])
+
+#elif defined(FASTUIDRAW_GLYPH_DATA_STORE_TEXTURE_ARRAY)
+
+  /* The width and height of fastuidraw_glyphDataStore are
+   * powers of 2, the values given by FASTUIDRAW_GLYPH_DATA_WIDTH_LOG2
+   * and FASTUIDRAW_GLYPH_DATA_HEIGHT_LOG2. We want to use
+   * bit shifts and masking to get the correct layer, height and so on.
+   */
+  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_GLYPH_DATA_STORE_BINDING) uniform usampler2DArray fastuidraw_glyphDataStore;
+  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_GLYPH_DATA_STORE_FP16X2_BINDING) uniform sampler2DArray fastuidraw_glyphDataStore_fp16x2;
+  #define FASTUIDRAW_GLYPH_DATA_WIDTH_PLUS_HEIGHT_LOG2 uint(FASTUIDRAW_GLYPH_DATA_WIDTH_LOG2 + FASTUIDRAW_GLYPH_DATA_HEIGHT_LOG2)
+  #define FASTUIDRAW_GLYPH_DATA_LAYER(T) (uint(T) >> FASTUIDRAW_GLYPH_DATA_WIDTH_PLUS_HEIGHT_LOG2)
+  #define FASTUIDRAW_GLYPH_DATA_Y(T) FASTUIDRAW_EXTRACT_BITS(FASTUIDRAW_GLYPH_DATA_WIDTH_LOG2, FASTUIDRAW_GLYPH_DATA_HEIGHT_LOG2, T)
+  #define FASTUIDRAW_GLYPH_DATA_X(T) FASTUIDRAW_EXTRACT_BITS(0, FASTUIDRAW_GLYPH_DATA_WIDTH_LOG2, T)
+  #define FASTUIDRAW_GLYPH_DATA_COORD(v) ivec3(FASTUIDRAW_GLYPH_DATA_X(v), FASTUIDRAW_GLYPH_DATA_Y(v), FASTUIDRAW_GLYPH_DATA_LAYER(v))
+
+  #define fastuidraw_fetch_glyph_data(X) (texelFetch(fastuidraw_glyphDataStore, FASTUIDRAW_GLYPH_DATA_COORD(X), 0).r)
+  #define fastuidraw_fetch_glyph_data_fp16x2(X) fastuidraw_unpackHalf2x16(fastuidraw_fetch_glyph_data(X))
+#else
+
+  FASTUIDRAW_LAYOUT_BINDING(FASTUIDRAW_GLYPH_DATA_STORE_BINDING) uniform usamplerBuffer fastuidraw_glyphDataStore;
+
+  #define fastuidraw_fetch_glyph_data(X) (texelFetch(fastuidraw_glyphDataStore, int(X)).r)
+  #define fastuidraw_fetch_glyph_data_fp16x2(X) fastuidraw_unpackHalf2x16(fastuidraw_fetch_glyph_data(X))
+
+#endif
+////////////////////////////////////////////////////
+
+
+///@endcond

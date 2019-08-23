@@ -13,11 +13,12 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-#pragma once
+#ifndef FASTUIDRAW_FASTUIDRAW_MEMORY_HPP
+#define FASTUIDRAW_FASTUIDRAW_MEMORY_HPP
 
 /*!\addtogroup Utility
  * @{
@@ -93,3 +94,5 @@
   fastuidraw::memory::free_implement(ptr, __FILE__, __LINE__)
 
 /*! @} */
+
+#endif

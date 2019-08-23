@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,17 +12,18 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-#pragma once
+#ifndef FASTUIDRAW_GLYPH_GENERATE_PARAMS_HPP
+#define FASTUIDRAW_GLYPH_GENERATE_PARAMS_HPP
 
 #include <fastuidraw/util/util.hpp>
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
   /*!
@@ -67,5 +68,109 @@ namespace fastuidraw
      */
     enum return_code
     distance_field_max_distance(float v);
+
+    /*!
+     * When generating restricted rays glyph data see (\ref
+     * GlyphRenderDataRestrictedRays), specifies the expected
+     * smallest size on the scrren at which to render glyphs
+     * via a \ref GlyphRenderDataRestrictedRays. The value is
+     * used to include curves near the boundary of bounding box
+     * so that anti-aliasing works correctly when the glyph
+     * is renderer very small. A negative value indicates that
+     * no slack is taken/used.
+     */
+    float
+    restricted_rays_minimum_render_size(void);
+
+    /*!
+     * Set the value returned by
+     * restricted_rays_minimum_render_size(void) const,
+     * initial value is 32.0. Returns \ref routine_success
+     * if value is successfully changed.
+     * \param v value
+     */
+    enum return_code
+    restricted_rays_minimum_render_size(float v);
+
+    /*!
+     * When generating restricted rays glyph data see (\ref
+     * GlyphRenderDataRestrictedRays), specifies the
+     * threshhold value for number of curves allowed in
+     * a single box before a box.
+     */
+    int
+    restricted_rays_split_thresh(void);
+
+    /*!
+     * Set the value returned by
+     * restricted_rays_split_thresh(void) const,
+     * initial value is 4. Returns \ref routine_success
+     * if value is successfully changed.
+     * \param v value
+     */
+    enum return_code
+    restricted_rays_split_thresh(int v);
+
+    /*!
+     * When generating restricted rays glyph data see (\ref
+     * GlyphRenderDataRestrictedRays), specifies the
+     * maximum level of recursion that will be used to
+     * generate the hierarchy of boxes.
+     */
+    int
+    restricted_rays_max_recursion(void);
+
+    /*!
+     * Set the value returned by
+     * restricted_rays_max_recursion(void) const,
+     * initial value is 12. Returns \ref routine_success
+     * if value is successfully changed.
+     * \param v value
+     */
+    enum return_code
+    restricted_rays_max_recursion(int v);
+
+    /*!
+     * When generating banded rays glyphs see (\ref
+     * GlyphRenderDataBandedRays), specifies the
+     * maximum number of times to recurse when
+     * generating sub-bands. The number of bands
+     * that are generated in a dimension is 2^N
+     * where N is the number of levels of recurion
+     * used to generate bands.
+     */
+    unsigned int
+    banded_rays_max_recursion(void);
+
+    /*!
+     * Set the value returned by
+     * banded_rays_max_recursion(void) const,
+     * initial value is 11. Returns \ref routine_success
+     * if value is successfully changed.
+     * \param v value
+     */
+    enum return_code
+    banded_rays_max_recursion(unsigned int v);
+
+    /*!
+     * When generating banded rays glyphs see (\ref
+     * GlyphRenderDataBandedRays), specifies the
+     * threshhold for the average number of curves
+     * across bands to stop recursing to finer bands.
+     */
+    float
+    banded_rays_average_number_curves_thresh(void);
+
+    /*!
+     * Set the value returned by
+     * banded_rays_average_number_curves_thresh(void) const,
+     * initial value is 2.5. Returns \ref routine_success
+     * if value is successfully changed.
+     * \param v value
+     */
+    enum return_code
+    banded_rays_average_number_curves_thresh(float v);
   }
 }
+
+#endif

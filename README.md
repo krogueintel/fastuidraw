@@ -10,8 +10,7 @@ addition, Fast UI Draw has, with the GL backend, very few pipeline states.
 Indeed an API trace of an application using Fast UI Draw will see only a
 handful of draw calls per frame, even under high Canvas state trashing,
 and high clip state changes. Indeed, for the GL backend, only one Canvas
-state change invokes a pipeline state change: changing the Porter-Duff blend
-mode.
+state change invokes a pipeline state change: changing the blend mode.
 
 In addition, Fast UI Draw gives an application the ability to make their
 own shaders for custom drawing.
@@ -26,34 +25,25 @@ The documentation is available online [here](https://intel.github.io/fastuidraw/
 
 GL requirements
 =====================
-  The GL backend requires GL version 3.3. For optimal rendering quality, either
-  GL_ARB_shader_image_load_store or GL_ARB_shader_framebuffer_fetch is recommended.
-  The extension GL_ARB_shader_image_load_store is core in GL 4.2. For optimal
-  performance with optimal rendering quality, GL_ARB_shader_framebuffer_fetch or
+  The GL backend requires GL version 3.3. To support the blend modes beyond
+  those of Porter-Duff blend modes either GL_EXT_shader_framebuffer_fetch or
   GL_ARB_shader_image_load_store with one of GL_INTEL_fragment_shader_ordering,
-  GL_ARB_fragment_shader_interlock or GL_NV_fragment_shader_interlock is strongly
-  recommended. Lastly, to support the non-seperarable blending operations,
-  GL_ARB_shader_framebuffer_fetch or GL_ARB_shader_image_load_store with one of
-  GL_INTEL_fragment_shader_ordering, GL_ARB_fragment_shader_interlock or
-  GL_NV_fragment_shader_interlock is required. The PorterDuff composition modes
-  do not require any extensions though.
+  GL_ARB_fragment_shader_interlock or GL_NV_fragment_shader_interlock is
+  required.
 
   The GLES backend requires GLES version 3.0. If the GLES version is 3.0 or 3.1,
   it is strongly recommended that one of the extension GL_OES_texture_buffer or
   GL_EXT_texture_buffer is present. For GLES 3.0, 3.1 and 3.2, it is strongly
   recommended for performance to have GL_APPLE_clip_distance or GL_EXT_clip_cull_distance.
-  For optimal rendering quality, one of GLES 3.1 or GL_ARB_shader_framebuffer_fetch
-  is recommended. For optimal performance with optimal rendering quality,
-  GL_ARB_shader_framebuffer_fetch or GLES 3.1 with GL_NV_fragment_shader_interlock
-  is strongly recommended. Lastly, to support the non-seperarable blending operations,
-  GL_ARB_shader_framebuffer_fetch or GLES 3.1 with GL_NV_fragment_shader_interlock
-  is required. The PorterDuff composition modes do not require any extensions though,
+  To support the blend modes beyond those of Porter-Duff blend modes either
+  GL_EXT_shader_framebuffer_fetch or GLES 3.1 with GL_NV_fragment_shader_interlock
+  is required. The Porter-Duff composition modes do not require any extensions though,
   but the extension GL_EXT_blend_func_extended will improve performance.
 
-  Intel GPU's starting in IvyBridge have the extensions support for optimal rendering
-  with optimal performance in both GL and GLES for recent enough versions of Mesa.
-  For MS-Windows, the Intel drivers for Intel GPU's also have support for optimal
-  rendering with optimal performance.
+  Intel GPU's starting in IvyBridge have the extensions support for optimal
+  performance with all blend modes in both GL and GLES for recent enough versions
+  of Mesa. For MS-Windows, the Intel drivers for Intel GPU's also have support
+  for optimal performance with all blend modes.
 
 Building requirements
 =====================
@@ -64,7 +54,7 @@ Building requirements
  - perl
  - up to date GL (and GLES) headers
    - You need
-      - for GL, from https://www.opengl.org/registry/: GL/glcorearb.h
+      - for GL, from https://www.opengl.org/registry/: GL/glcorearb.h, KHR/khrplatform.h
       - for GLES, from https://www.khronos.org/registry/gles/: GLES2/gl2.h, GLES2/gl2ext.h, GLES3/gl3.h, GLES3/gl31.h, GLES3/gl32.h, KHR/khrplatform.h
    - The expected place of those headers is set by setting the
      environmental variable GL_INCLUDEPATH; if the value is not set,
@@ -80,6 +70,23 @@ Building
   "make targets" to see all build targets and the list of environmental
   variables that control what is built and how. On MS-Windows, the helper
   library NEGL is NOT built by default and on other platforms it is.
+
+  MacOS build is possible, but is NOT done with the GL headers that
+  are included in MacOS. Instead copy the needed Khronos headers
+  to /usr/local/include with the tree intact, i.e. copy GL/glcorearb.h
+  from the Khronos registry to /usr/local/include/GL/glcorearb.h and
+  copy KHR/khrplatform.h to /usr/local/include/KHR/khrplatform.h.
+  Then the build process will work (the build system defaults
+  GL_INCLUDEPATH to /usr/local/include on OS-X). Yes, this is a hack.
+
+Running Demos
+=============
+  The demos (naturally) link against the FastUIDraw libraries, thus they
+  need to be in the library path. For Unix platforms, this is done by
+  appending the path where the libraries are located to LD_LIBRARY_PATH.
+  A simple quick hack is to do `export LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH`.
+  All demos have options which can be see by passing `--help` as the one
+  and only command line option to the demo.
 
 Installing
 ==========
@@ -116,8 +123,6 @@ Notes
     the release flags. If you are building for debug use the debug
     libraries and the debug flags. One can get the flag values by
     using either pkg-config or the script fastuidraw-config.
-  - All demos when given -help as command line display all options
-  - The demos require that the libraries are in the library path
 
 Successfully builds under
 =========================

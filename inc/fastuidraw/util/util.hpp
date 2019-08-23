@@ -13,12 +13,13 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_UTIL_HPP
+#define FASTUIDRAW_UTIL_HPP
 
 #include <stdint.h>
 #include <stddef.h>
@@ -87,15 +88,28 @@
  * is true and if it is not true prints to std::cerr and
  * then aborts. If FastUIDRAW_DEBUG is not defined, then
  * macro is empty (and thus the condition is not evaluated).
+ * \param X condition to check
  */
 #ifdef FASTUIDRAW_DEBUG
 #define FASTUIDRAWassert(X) do {                        \
     if (!(X)) {                                          \
-      fastuidraw::assert_fail(#X, __FILE__, __LINE__);  \
+      fastuidraw::assert_fail("Assertion '" #X "' failed", __FILE__, __LINE__);  \
     } } while(0)
 #else
 #define FASTUIDRAWassert(X)
 #endif
+
+/*!\def FASTUIDRAWmessaged_assert
+ * Regardless FASTUIDRAW_DEBUG is defined or not, checks if
+ * the statement is true and if it is not true prints to
+ * std::cerr. If FASTUIDRAW_DEBUG is defined also aborts.
+ * \param X condition to check
+ * \param Y string to print if condition is false
+ */
+#define FASTUIDRAWmessaged_assert(X, Y) do {                    \
+    if (!(X)) {                                                 \
+      fastuidraw::assert_fail(Y, __FILE__, __LINE__);           \
+    } } while(0)
 
 /*!\def FASTUIDRAWstatic_assert
  * Conveniance for using static_assert where message
@@ -119,28 +133,6 @@ namespace fastuidraw
    * Conveniant typedef for C-style strings.
    */
   typedef const char *c_string;
-
-  /*!
-   * \brief
-   * Union to store 32-bit data.
-   */
-  union generic_data
-  {
-    /*!
-     * The data as an uint32_t
-     */
-    uint32_t u;
-
-    /*!
-     * The data as an int32_t
-     */
-    int32_t  i;
-
-    /*!
-     * The data as a float
-     */
-    float    f;
-  };
 
   /*!
    * \brief
@@ -533,11 +525,21 @@ namespace fastuidraw
   {
   public:
     /*!
-     * implicit cast operator to bool to return true.
+     * Typedef for value_type.
      */
-    operator bool() const
+    typedef bool value_type;
+
+    /*!
+     * constexpr for the value.
+     */
+    static constexpr value_type value = true;
+
+    /*!
+     * implicit cast operator to bool to return false.
+     */
+    constexpr value_type operator()() const noexcept
     {
-      return true;
+      return false;
     }
   };
 
@@ -551,13 +553,95 @@ namespace fastuidraw
   {
   public:
     /*!
+     * Typedef for value_type.
+     */
+    typedef bool value_type;
+
+    /*!
+     * constexpr for the value.
+     */
+    static constexpr value_type value = false;
+
+    /*!
      * implicit cast operator to bool to return false.
      */
-    operator bool() const
+    constexpr value_type operator()() const noexcept
     {
       return false;
     }
   };
 
+  /*!
+   * Provideds functionality of std::remove_const so
+   * that we do not depend on std.
+   */
+  template<typename T>
+  class remove_const
+  {
+  public:
+    /*!
+     * The type of \ref type will be the same
+     * as T but with the const-ness removed.
+     */
+    typedef T type;
+  };
+
+  /*!
+   * Provideds functionality of std::remove_const so
+   * that we do not depend on std.
+   */
+  template<typename T>
+  class remove_const<T const>
+  {
+  public:
+    /*!
+     * The type of \ref type will be the same
+     * as T but with the const-ness removed.
+     */
+    typedef T type;
+  };
+
+  /*!
+   * Provideds functionality of std::is_const so
+   * that we do not depend on std.
+   */
+  template<typename T>
+  class is_const : public false_type
+  {
+  };
+
+  ///@cond
+  template<typename T>
+  class is_const<T const> : public true_type
+  {
+  };
+  ///@endcond
+
+  /*!
+   * Typedef to give same const-ness of type T
+   * to a type S.
+   */
+  template<typename T, typename S>
+  class same_const
+  {
+  public:
+    /*!
+     * The type of \ref type will be the same
+     * as S but with the const-ness of T.
+     */
+    typedef typename remove_const<S>::type type;
+  };
+
+  ///@cond
+  template<typename T, typename S>
+  class same_const<T const, S>
+  {
+  public:
+    typedef typename remove_const<S>::type const type;
+  };
+  ///@endcond
+
 }
 /*! @} */
+
+#endif

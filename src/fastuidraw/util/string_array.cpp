@@ -1,8 +1,26 @@
+/*!
+ * \file string_array.hpp
+ * \brief file string_array.hpp
+ *
+ * Copyright 2018 by Intel.
+ *
+ * Contact: kevin.rogovin@gmail.com
+ *
+ * This Source Code Form is subject to the
+ * terms of the Mozilla Public License, v. 2.0.
+ * If a copy of the MPL was not distributed with
+ * this file, You can obtain one at
+ * http://mozilla.org/MPL/2.0/.
+ *
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
+ *
+ */
+
 #include <string>
 #include <vector>
 #include <fastuidraw/util/string_array.hpp>
 #include <fastuidraw/util/fastuidraw_memory.hpp>
-#include "../private/util_private.hpp"
+#include <private/util_private.hpp>
 
 namespace
 {
@@ -15,8 +33,20 @@ namespace
 
     StringArrayPrivate(const StringArrayPrivate &obj):
       m_strings(obj.m_strings),
-      m_c_strings_ready(obj.m_strings.empty())
-    {}
+      m_c_strings_ready(false)
+    {
+    }
+
+    StringArrayPrivate&
+    operator=(const StringArrayPrivate &rhs)
+    {
+      if (&rhs != this)
+        {
+          m_strings = rhs.m_strings;
+          m_c_strings_ready = false;
+        }
+      return *this;
+    }
 
     void
     ready_c_strings(void)
@@ -82,6 +112,17 @@ resize(unsigned int size, c_string value)
   value = (value) ? value : "";
   d->m_strings.resize(size, value);
   d->m_c_strings_ready = false;
+}
+
+void
+fastuidraw::string_array::
+clear(void)
+{
+  StringArrayPrivate *d;
+  d = static_cast<StringArrayPrivate*>(m_d);
+  d->m_strings.clear();
+  d->m_c_strings.clear();
+  d->m_c_strings_ready = true;
 }
 
 fastuidraw::c_array<const fastuidraw::c_string>

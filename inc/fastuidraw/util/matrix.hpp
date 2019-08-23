@@ -13,12 +13,13 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_MATRIX_HPP
+#define FASTUIDRAW_MATRIX_HPP
 
 #include <fastuidraw/util/math.hpp>
 #include <fastuidraw/util/vecN.hpp>
@@ -818,3 +819,5 @@ typedef orthogonal_projection_params<float> float_orthogonal_projection_params;
 
 /*! @} */
 } //namespace
+
+#endif

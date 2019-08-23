@@ -13,14 +13,14 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_C_ARRAY_HPP
+#define FASTUIDRAW_C_ARRAY_HPP
 
-#include <iterator>
 #include <fastuidraw/util/util.hpp>
 #include <fastuidraw/util/vecN.hpp>
 
@@ -107,18 +107,6 @@ public:
    * iterator typedef to const_pointer
    */
   typedef const_pointer const_iterator;
-
-  /*!
-   * \brief
-   * iterator typedef using std::reverse_iterator.
-   */
-  typedef std::reverse_iterator<const_iterator>  const_reverse_iterator;
-
-  /*!
-   * \brief
-   * iterator typedef using std::reverse_iterator.
-   */
-  typedef std::reverse_iterator<iterator>        reverse_iterator;
 
   /*!
    * Default ctor, initializing the pointer as nullptr
@@ -236,6 +224,18 @@ public:
   }
 
   /*!
+   * For when T is vecN<S, N> for a type S, flattens the c_array<T>
+   * into a c_array<S> refering to the same data.
+   */
+  c_array<typename unvecN<T>::type>
+  flatten_array(void) const
+  {
+    typename unvecN<T>::type *p;
+    p = reinterpret_cast<typename unvecN<T>::type*>(c_ptr());
+    return c_array<typename unvecN<T>::type>(p, m_size * unvecN<T>::array_size);
+  }
+
+  /*!
    * Pointer of the c_array.
    */
   T*
@@ -304,24 +304,6 @@ public:
   }
 
   /*!
-   * STL compliant function.
-   */
-  reverse_iterator
-  rbegin(void) const
-  {
-    return reverse_iterator(end());
-  }
-
-  /*!
-   * STL compliant function.
-   */
-  reverse_iterator
-  rend(void) const
-  {
-    return reverse_iterator(begin());
-  }
-
-  /*!
    * Returns the range of the c_array as an
    * iterator range.
    */
@@ -329,16 +311,6 @@ public:
   range(void) const
   {
     return range_type<iterator>(begin(), end());
-  }
-
-  /*!
-   * Returns the range of the c_array as a
-   * reverse_iterator range
-   */
-  range_type<reverse_iterator>
-  reverse_range(void) const
-  {
-    return range_type<reverse_iterator>(rbegin(), rend());
   }
 
   /*!
@@ -474,7 +446,54 @@ private:
   T *m_ptr;
 };
 
+/*!
+ * Convert an array of 32-bit floating point values
+ * to an array of 16-bit half values
+ * \param src fp32 value to convert
+ * \param dst location to which to write fp16 values
+ */
+void
+convert_to_fp16(c_array<const float> src, c_array<uint16_t> dst);
+
+/*!
+ * Convert an array of 16-bit floating point values
+ * to an array of 32-bit half values
+ * \param src fp16 value to convert
+ * \param dst location to which to write fp32 values
+ */
+void
+convert_to_fp32(c_array<const uint16_t> src, c_array<float> dst);
+
+/*!
+ * Conveniance function to pack a single \ref vec2
+ * into an fp16-pair returned as a uint32_t.
+ * \param src float-pair to pack as an fp16-pair.
+ */
+inline
+uint32_t
+pack_as_fp16(vec2 src)
+{
+  uint32_t return_value;
+  uint16_t *ptr(reinterpret_cast<uint16_t*>(&return_value));
+  convert_to_fp16(src, c_array<uint16_t>(ptr, 2));
+  return return_value;
+}
+
+/*!
+ * Provided as a conveniance, equivalent to
+ * \code
+ *  pack_as_fp16(vec2(x, y));
+ * \endcode
+ */
+inline
+uint32_t
+pack_as_fp16(float x, float y)
+{
+  return pack_as_fp16(vec2(x, y));
+}
 
 /*! @} */
 
 } //namespace
+
+#endif

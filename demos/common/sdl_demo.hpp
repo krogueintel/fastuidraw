@@ -13,12 +13,13 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_DEMO_SDL_DEMO_HPP
+#define FASTUIDRAW_DEMO_SDL_DEMO_HPP
 
 #include <iostream>
 #include <iomanip>
@@ -39,7 +40,6 @@
 #include "ostream_utility.hpp"
 #include "generic_command_line.hpp"
 #include "cast_c_array.hpp"
-#include "egl_helper.hpp"
 
 /*
   Notes:
@@ -155,7 +155,7 @@ private:
   command_line_argument_value<bool> m_gl_core_profile;
   command_line_argument_value<bool> m_try_to_get_latest_gl_version;
 #endif
-  command_line_argument_value<bool> m_use_egl;
+  command_line_argument_value<unsigned int> m_num_warm_up_frames;
   command_line_argument_value<bool> m_show_framerate;
 
   fastuidraw::reference_counted_ptr<fastuidraw::gl_binding::CallbackGL> m_gl_logger;
@@ -166,5 +166,6 @@ private:
 
   SDL_Window *m_window;
   SDL_GLContext m_ctx;
-  fastuidraw::reference_counted_ptr<egl_helper> m_ctx_egl;
 };
+
+#endif

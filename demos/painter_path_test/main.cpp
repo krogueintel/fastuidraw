@@ -6,6 +6,9 @@
 #include <math.h>
 
 #include <fastuidraw/util/util.hpp>
+#include <fastuidraw/path_dash_effect.hpp>
+#include <fastuidraw/painter/attribute_data/stroked_point.hpp>
+#include <fastuidraw/painter/attribute_data/arc_stroked_point.hpp>
 
 #include "sdl_painter_demo.hpp"
 #include "simple_time.hpp"
@@ -26,6 +29,406 @@ c_string
 on_off(bool v)
 {
   return v ? "ON" : "OFF";
+}
+
+class WavyEffect
+{
+public:
+  float m_domain_coeff, m_phase;
+  vecN<float, 4> m_cos_coeffs;
+  vecN<float, 4> m_sin_coeffs;
+};
+
+template<typename T>
+class ExampleItemData:public PainterItemShaderData
+{
+public:
+  virtual
+  void
+  pack_data(c_array<uvec4> dst) const override
+  {
+    float sum(0.0f);
+
+    for (int i = 0; i < 4; ++i)
+      {
+        sum += t_abs(m_wavy_effect.m_cos_coeffs[i]);
+        sum += t_abs(m_wavy_effect.m_sin_coeffs[i]);
+      }
+
+    dst[0] = pack_vec4(m_wavy_effect.m_cos_coeffs);
+    dst[1] = pack_vec4(m_wavy_effect.m_sin_coeffs);
+    dst[2].x() = pack_float(m_wavy_effect.m_domain_coeff);
+    dst[2].y() = pack_float(1.0f / sum);
+    dst[2].z() = pack_float(m_wavy_effect.m_phase);
+    dst[2].w() = pack_float(m_stroke_params.width());
+    m_stroke_params.pack_data(dst.sub_array(3));
+  }
+
+  virtual
+  unsigned int
+  data_size(void) const override
+  {
+    return 3 + m_stroke_params.data_size();
+  }
+
+  WavyEffect m_wavy_effect;
+  T m_stroke_params;
+};
+
+reference_counted_ptr<glsl::PainterItemShaderGLSL>
+call_ctor(bool uses_discard,
+          const glsl::ShaderSource &vert_src,
+          const glsl::ShaderSource &frag_src,
+          const glsl::PainterItemShaderGLSL::DependencyList deps,
+          unsigned int num_subshaders)
+{
+  return FASTUIDRAWnew glsl::PainterItemShaderGLSL(uses_discard,
+                                                   vert_src,
+                                                   frag_src,
+                                                   glsl::varying_list(),
+                                                   deps,
+                                                   num_subshaders);
+}
+
+reference_counted_ptr<glsl::PainterItemCoverageShaderGLSL>
+call_ctor(bool,
+          const glsl::ShaderSource &vert_src,
+          const glsl::ShaderSource &frag_src,
+          const glsl::PainterItemCoverageShaderGLSL::DependencyList deps,
+          unsigned int num_subshaders)
+{
+  return FASTUIDRAWnew glsl::PainterItemCoverageShaderGLSL(vert_src,
+                                                           frag_src,
+                                                           glsl::varying_list(),
+                                                           deps,
+                                                           num_subshaders);
+}
+
+bool
+uses_discard(const reference_counted_ptr<glsl::PainterItemShaderGLSL> &sh,
+             bool apply_wavy_effect)
+{
+  return apply_wavy_effect || sh->uses_discard();
+}
+
+bool
+uses_discard(const reference_counted_ptr<glsl::PainterItemCoverageShaderGLSL>&,
+             bool)
+{
+  return false;
+}
+
+template<typename T>
+reference_counted_ptr<T>
+create_custom_shader(const reference_counted_ptr<T> &stroking_shader,
+                     bool add_wavy_effect)
+{
+  using namespace fastuidraw;
+  using namespace glsl;
+
+  typename T::DependencyList deps;
+  deps.add_shader("stroke_shader", stroking_shader);
+
+  const char *custom_vert_shader =
+    "void\n"
+    "fastuidraw_gl_vert_main(in uint sub_shader,\n"
+    "                        in uvec4 in_attrib0,\n"
+    "                        in uvec4 in_attrib1,\n"
+    "                        in uvec4 in_attrib2,\n"
+    "                        inout uint shader_data_block,\n"
+    "                        #ifdef FASTUIDRAW_RENDER_TO_COLOR_BUFFER\n"
+    "                        out int z_add,\n"
+    "                        out vec2 out_brush_p,\n"
+    "                        #endif\n"
+    "                        out vec3 out_clip_p)\n"
+    "{\n"
+    "    shader_data_block += 3u;\n"
+    "    stroke_shader(sub_shader, in_attrib0, in_attrib1, in_attrib2,\n"
+    "                  shader_data_block,\n"
+    "                  #ifdef FASTUIDRAW_RENDER_TO_COLOR_BUFFER\n"
+    "                  z_add, out_brush_p,\n"
+    "                  #endif\n"
+    "                  out_clip_p);\n"
+    "}\n";
+
+  const char *custom_wavy_frag_shader =
+    "#ifdef FASTUIDRAW_RENDER_TO_COLOR_BUFFER\n"
+    "#define return_type vec4\n"
+    "#else\n"
+    "#define return_type float\n"
+    "#endif\n"
+    "return_type\n"
+    "fastuidraw_gl_frag_main(in uint sub_shader,\n"
+    "                        inout uint shader_data_block)\n"
+    "{\n"
+    "   vec4 cos_coeffs, sin_coeffs;\n"
+    "   uvec4 tmp;\n"
+    "   float coeff, inverse_sum, phase, width;\n"
+    "   return_type return_value;\n"
+    "   cos_coeffs = uintBitsToFloat(fastuidraw_fetch_data(shader_data_block));\n"
+    "   sin_coeffs = uintBitsToFloat(fastuidraw_fetch_data(shader_data_block + 1u));\n"
+    "   tmp = fastuidraw_fetch_data(shader_data_block + 2u);\n"
+    "   coeff = uintBitsToFloat(tmp.x);\n"
+    "   inverse_sum = uintBitsToFloat(tmp.y);\n"
+    "   phase = uintBitsToFloat(tmp.z);\n"
+    "   width = uintBitsToFloat(tmp.w);\n"
+    "   shader_data_block += 3u;\n"
+    "\n"
+    "   return_value = stroke_shader(sub_shader, shader_data_block);\n"
+    // use the symbols fastuidraw_stroking_relative_distance_from_center
+    // and fastuidraw_stroking_distance to know where and how far the fragment
+    // is from the path and how far along it is on the path
+    "   float a, r;\n"
+    "   vec4 cos_tuple, sin_tuple;\n"
+    "   r = coeff * stroke_shader::fastuidraw_stroking_distance + phase;\n"
+    "   cos_tuple = vec4(cos(r), cos(2.0 * r), cos(3.0 * r), cos(4.0 * r));\n"
+    "   sin_tuple = vec4(sin(r), sin(2.0 * r), sin(3.0 * r), sin(4.0 * r));\n"
+    "   a = inverse_sum * (dot(cos_coeffs, cos_tuple) + dot(sin_coeffs, sin_tuple));\n"
+    "   a = abs(a);\n"
+    "#ifdef FASTUIDRAW_RENDER_TO_COLOR_BUFFER\n"
+    "   if (a < stroke_shader::fastuidraw_stroking_relative_distance_from_center)\n"
+    "     FASTUIDRAW_DISCARD;\n"
+    "#else\n"
+    "   float q, dd;\n"
+    // we want a coverage value so that if a < stroke_shader::fastuidraw_stroking_relative_distance_from_center
+    // then we get zero, but we want to apply some anti-aliasing as well.
+    "   q = max(0.0, a - stroke_shader::fastuidraw_stroking_relative_distance_from_center);\n"
+    "   dd = max(q, stroke_shader::fastuidraw_stroking_relative_distance_from_center_fwidth);\n"
+    "   return_value *= q / dd;\n"
+    "#endif\n"
+    "   return return_value;\n"
+    "}\n"
+    "#undef return_type\n";
+
+  const char *custom_pass_through_frag_shader =
+    "#ifdef FASTUIDRAW_RENDER_TO_COLOR_BUFFER\n"
+    "vec4\n"
+    "#else\n"
+    "float\n"
+    "#endif\n"
+    "fastuidraw_gl_frag_main(in uint sub_shader,\n"
+    "                        inout uint shader_data_block)\n"
+    "{\n"
+    "   shader_data_block += 3u;"
+    "   return stroke_shader(sub_shader, shader_data_block);\n"
+    "}\n";
+
+  const char *custom_frag_shader;
+
+  custom_frag_shader = (add_wavy_effect) ?
+    custom_wavy_frag_shader:
+    custom_pass_through_frag_shader;
+
+  return call_ctor(uses_discard(stroking_shader, add_wavy_effect),
+                   ShaderSource().add_source(custom_vert_shader, ShaderSource::from_string),
+                   ShaderSource().add_source(custom_frag_shader, ShaderSource::from_string),
+                   deps,
+                   stroking_shader->number_sub_shaders());
+}
+
+template<typename T>
+class CustomShaderGenerator:noncopyable
+{
+public:
+  typedef reference_counted_ptr<T> shader_ref;
+  typedef std::map<shader_ref, shader_ref> shader_map;
+
+  shader_ref
+  fetch_generate_custom_shader(const shader_ref &src, bool add_wavy_effect)
+  {
+    typename shader_map::iterator iter;
+    shader_ref return_value;
+
+    iter = m_shaders.find(src);
+    if (iter != m_shaders.end())
+      {
+        return_value = iter->second;
+      }
+    else
+      {
+        return_value = create_custom_shader<T>(src, add_wavy_effect);
+        m_shaders[src] = return_value;
+      }
+    return return_value;
+  }
+
+private:
+  shader_map m_shaders;
+};
+
+reference_counted_ptr<PainterItemShader>
+generate_item_shader(CustomShaderGenerator<glsl::PainterItemShaderGLSL> &item_shaders,
+                     CustomShaderGenerator<glsl::PainterItemCoverageShaderGLSL> &cvg_shaders,
+                     reference_counted_ptr<PainterItemShader> src)
+{
+  using namespace fastuidraw;
+  using namespace glsl;
+
+  reference_counted_ptr<PainterItemCoverageShader> src_cvg, use_cvg;
+  reference_counted_ptr<PainterItemShaderGLSL> src_glsl, use;
+
+  /* Get the actual item shader that implements the code */
+  if (src->parent())
+    {
+      src_glsl = src->parent().dynamic_cast_ptr<PainterItemShaderGLSL>();
+    }
+  else
+    {
+      src_glsl = src.dynamic_cast_ptr<PainterItemShaderGLSL>();
+    }
+  FASTUIDRAWassert(src_glsl);
+
+  /* Generate the parent shader(s) for the returned value from
+   * the source item shader that implements the code
+   */
+  src_cvg = src->coverage_shader();
+  if (src_cvg)
+    {
+      reference_counted_ptr<PainterItemCoverageShaderGLSL> src_cvg_glsl;
+
+      if (src_cvg->parent())
+        {
+          src_cvg_glsl = src_cvg->parent().dynamic_cast_ptr<PainterItemCoverageShaderGLSL>();
+        }
+      else
+        {
+          src_cvg_glsl = src_cvg.dynamic_cast_ptr<PainterItemCoverageShaderGLSL>();
+        }
+      FASTUIDRAWassert(src_cvg_glsl);
+
+      /* the coverage shader does the pixel coverage */
+      use_cvg = cvg_shaders.fetch_generate_custom_shader(src_cvg_glsl, true);
+      use = item_shaders.fetch_generate_custom_shader(src_glsl, false);
+
+      /* use correct sub-shader from use_cvg */
+      use_cvg = FASTUIDRAWnew PainterItemCoverageShader(use_cvg, src_cvg->sub_shader());
+    }
+  else
+    {
+      /* Fragment's item shader does the pixel computation */
+      use = item_shaders.fetch_generate_custom_shader(src_glsl, true);
+    }
+
+  return FASTUIDRAWnew PainterItemShader(use, src->sub_shader(), use_cvg);
+}
+
+void
+set_shader(PainterStrokeShader &dst,
+           CustomShaderGenerator<glsl::PainterItemShaderGLSL> &item_shaders,
+           CustomShaderGenerator<glsl::PainterItemCoverageShaderGLSL> &cvg_shaders,
+           const PainterStrokeShader &src,
+           enum Painter::stroking_method_t tp,
+           enum PainterStrokeShader::shader_type_t sh)
+{
+  reference_counted_ptr<PainterItemShader> new_shader, src_shader;
+
+  src_shader = src.shader(tp, sh);
+  new_shader = generate_item_shader(item_shaders, cvg_shaders, src_shader);
+  FASTUIDRAWassert(new_shader);
+
+  dst.shader(tp, sh, new_shader);
+}
+
+class CustomStrokingDataSelector:public StrokingDataSelectorBase
+{
+public:
+  explicit
+  CustomStrokingDataSelector(const reference_counted_ptr<const StrokingDataSelectorBase> &base):
+    m_base(base)
+  {}
+
+  virtual
+  float
+  compute_thresh(c_array<const uvec4> data,
+                 float path_magnification,
+                 float curve_flatness) const override
+  {
+    return m_base->compute_thresh(data.sub_array(3),
+                                  path_magnification,
+                                  curve_flatness);
+  }
+
+  virtual
+  void
+  stroking_distances(c_array<const uvec4 > data,
+                     c_array<float> out_values) const override
+  {
+    m_base->stroking_distances(data.sub_array(3), out_values);
+  }
+
+  virtual
+  bool
+  arc_stroking_possible(c_array<const uvec4 > data) const override
+  {
+    return m_base->arc_stroking_possible(data.sub_array(3));
+  }
+
+  virtual
+  bool
+  data_compatible(c_array<const uvec4 > data) const override
+  {
+    return m_base->data_compatible(data.sub_array(3));
+  }
+
+  reference_counted_ptr<const StrokingDataSelectorBase> m_base;
+};
+
+PainterStrokeShader
+generate_stroke_shader(const PainterStrokeShader &src,
+                       CustomShaderGenerator<glsl::PainterItemShaderGLSL> &item_shaders,
+                       CustomShaderGenerator<glsl::PainterItemCoverageShaderGLSL> &cvg_shaders)
+{
+  using namespace fastuidraw;
+  using namespace glsl;
+
+  PainterStrokeShader return_value;
+
+  set_shader(return_value, item_shaders, cvg_shaders,
+             src, Painter::stroking_method_linear,
+             PainterStrokeShader::non_aa_shader);
+
+  set_shader(return_value, item_shaders, cvg_shaders,
+             src, Painter::stroking_method_arc,
+             PainterStrokeShader::non_aa_shader);
+
+  set_shader(return_value, item_shaders, cvg_shaders,
+             src, Painter::stroking_method_linear,
+             PainterStrokeShader::aa_shader);
+
+  set_shader(return_value, item_shaders, cvg_shaders,
+             src, Painter::stroking_method_arc,
+             PainterStrokeShader::aa_shader);
+
+  return_value
+    .stroking_data_selector(FASTUIDRAWnew CustomStrokingDataSelector(src.stroking_data_selector()))
+    .fastest_non_anti_aliased_stroking_method(src.fastest_non_anti_aliased_stroking_method())
+    .fastest_anti_aliased_stroking_method(src.fastest_anti_aliased_stroking_method());
+
+  return return_value;
+}
+
+void
+set_shader(PainterDashedStrokeShaderSet &dst,
+           CustomShaderGenerator<glsl::PainterItemShaderGLSL> &item_shaders,
+           CustomShaderGenerator<glsl::PainterItemCoverageShaderGLSL> &cvg_shaders,
+           const PainterDashedStrokeShaderSet &src,
+           enum Painter::cap_style st)
+{
+  dst.shader(st, generate_stroke_shader(src.shader(st), item_shaders, cvg_shaders));
+}
+
+PainterDashedStrokeShaderSet
+generate_dashed_stroke_shader(const PainterDashedStrokeShaderSet &src,
+                               CustomShaderGenerator<glsl::PainterItemShaderGLSL> &item_shaders,
+                               CustomShaderGenerator<glsl::PainterItemCoverageShaderGLSL> &cvg_shaders)
+{
+  PainterDashedStrokeShaderSet return_value;
+
+  set_shader(return_value, item_shaders, cvg_shaders, src, Painter::flat_caps);
+  set_shader(return_value, item_shaders, cvg_shaders, src, Painter::rounded_caps);
+  set_shader(return_value, item_shaders, cvg_shaders, src, Painter::square_caps);
+
+  return return_value;
 }
 
 class DashPatternList:public command_line_argument
@@ -144,17 +547,9 @@ everything_filled(int)
   return true;
 }
 
-bool
-is_miter_join_style(unsigned int js)
-{
-  return js == Painter::miter_clip_joins
-    || js == Painter::miter_bevel_joins
-    || js == Painter::miter_joins;
-}
-
 #ifndef FASTUIDRAW_GL_USE_GLES
 
-class EnableWireFrameAction:public PainterDraw::Action
+class EnableWireFrameAction:public PainterDrawBreakAction
 {
 public:
   explicit
@@ -163,8 +558,8 @@ public:
   {}
 
   virtual
-  fastuidraw::gpu_dirty_state
-  execute(PainterDraw::APIBase *) const
+  gpu_dirty_state
+  execute(PainterBackend*) const
   {
     if (m_lines)
       {
@@ -184,13 +579,21 @@ private:
 
 #endif
 
-class PerPath
+class PerPath:public reference_counted<PerPath>::non_concurrent
 {
 public:
-  PerPath(const Path &path, const std::string &label,
+  PerPath(Path &path, const std::string &label,
           int w, int h, bool from_gylph);
 
-  Path m_path;
+  PerPath(const Path *path, const std::string &label,
+          int w, int h, bool from_gylph);
+
+  const Path&
+  path(void) const
+  {
+    return *m_path_ptr;
+  }
+
   std::string m_path_string;
   std::vector<vec2> m_pts, m_ctl_pts, m_arc_center_pts;
   std::string m_label;
@@ -201,18 +604,27 @@ public:
   float m_angle;
   PanZoomTrackerSDLEvent m_path_zoomer;
 
-  bool m_translate_brush, m_matrix_brush;
+  bool m_matrix_brush;
 
   vec2 m_gradient_p0, m_gradient_p1;
   float m_gradient_r0, m_gradient_r1;
   float m_sweep_repeat_factor;
-  bool m_repeat_gradient;
+  enum PainterBrush::spread_type_t m_gradient_spread_type;
 
   bool m_repeat_window;
   vec2 m_repeat_xy, m_repeat_wh;
+  enum PainterBrush::spread_type_t m_repeat_window_spread_type_x;
+  enum PainterBrush::spread_type_t m_repeat_window_spread_type_y;
 
   bool m_clipping_window;
   vec2 m_clipping_xy, m_clipping_wh;
+
+private:
+  void
+  common_init(int w, int h);
+
+  Path m_path_v;
+  const Path *m_path_ptr;
 };
 
 class painter_stroke_test:public sdl_painter_demo
@@ -253,26 +665,6 @@ private:
       number_image_filter_modes
     };
 
-  enum anti_alias_mode_t
-    {
-      no_anti_alias,
-      by_anti_alias_auto,
-      by_anti_alias_simple,
-      by_anti_alias_hq,
-      by_anti_alias_fastest,
-
-      number_anti_alias_modes
-    };
-
-  enum stroking_mode_t
-    {
-      stroke_linear_path,
-      stroke_arc_path,
-      stroke_auto_path,
-
-      number_stroking_modes
-    };
-
   enum fill_mode_t
     {
       draw_fill_path,
@@ -282,8 +674,17 @@ private:
       number_fill_modes,
     };
 
+  enum fill_by_mode_t
+    {
+      fill_by_filled_path,
+      fill_by_clipping,
+      fill_by_shader_filled_path,
+
+      fill_by_number_modes
+    };
+
   typedef std::pair<std::string,
-                    reference_counted_ptr<ColorStopSequenceOnAtlas> > named_color_stop;
+                    reference_counted_ptr<ColorStopSequence> > named_color_stop;
 
   void
   construct_paths(int w, int h);
@@ -298,7 +699,13 @@ private:
   construct_dash_patterns(void);
 
   vec2
-  item_coordinates(ivec2 c);
+  item_coordinates(ivec2 c)
+  {
+    return item_coordinates(vec2(c));
+  }
+
+  vec2
+  item_coordinates(vec2 c);
 
   vec2
   brush_item_coordinate(ivec2 c);
@@ -309,127 +716,133 @@ private:
   PanZoomTrackerSDLEvent&
   zoomer(void)
   {
-    return m_paths[m_selected_path].m_path_zoomer;
+    return m_paths[m_selected_path]->m_path_zoomer;
   }
 
   const Path&
   path(void)
   {
-    return m_paths[m_selected_path].m_path;
+    return m_paths[m_selected_path]->path();
   }
 
   unsigned int&
   current_fill_rule(void)
   {
-    return m_paths[m_selected_path].m_fill_rule;
+    return m_paths[m_selected_path]->m_fill_rule;
   }
 
   unsigned int
   current_end_fill_rule(void)
   {
-    return m_paths[m_selected_path].m_end_fill_rule;
+    return m_paths[m_selected_path]->m_end_fill_rule;
   }
 
   vec2&
   shear(void)
   {
-    return m_paths[m_selected_path].m_shear;
+    return m_paths[m_selected_path]->m_shear;
   }
 
   vec2&
   shear2(void)
   {
-    return m_paths[m_selected_path].m_shear2;
+    return m_paths[m_selected_path]->m_shear2;
   }
 
   float&
   angle(void)
   {
-    return m_paths[m_selected_path].m_angle;
+    return m_paths[m_selected_path]->m_angle;
   }
 
   vec2&
   gradient_p0(void)
   {
-    return m_paths[m_selected_path].m_gradient_p0;
+    return m_paths[m_selected_path]->m_gradient_p0;
   }
 
   vec2&
   gradient_p1(void)
   {
-    return m_paths[m_selected_path].m_gradient_p1;
+    return m_paths[m_selected_path]->m_gradient_p1;
   }
 
   float&
   gradient_r0(void)
   {
-    return m_paths[m_selected_path].m_gradient_r0;
+    return m_paths[m_selected_path]->m_gradient_r0;
   }
 
   float&
   gradient_r1(void)
   {
-    return m_paths[m_selected_path].m_gradient_r1;
+    return m_paths[m_selected_path]->m_gradient_r1;
   }
 
   float&
   sweep_repeat_factor(void)
   {
-    return m_paths[m_selected_path].m_sweep_repeat_factor;
+    return m_paths[m_selected_path]->m_sweep_repeat_factor;
   }
 
-  bool&
-  repeat_gradient(void)
+  enum PainterBrush::spread_type_t&
+  gradient_spread_type(void)
   {
-    return m_paths[m_selected_path].m_repeat_gradient;
+    return m_paths[m_selected_path]->m_gradient_spread_type;
   }
 
-  bool&
-  translate_brush(void)
+  enum PainterBrush::spread_type_t&
+  repeat_window_spread_type_x(void)
   {
-    return m_paths[m_selected_path].m_translate_brush;
+    return m_paths[m_selected_path]->m_repeat_window_spread_type_x;
+  }
+
+  enum PainterBrush::spread_type_t&
+  repeat_window_spread_type_y(void)
+  {
+    return m_paths[m_selected_path]->m_repeat_window_spread_type_y;
   }
 
   bool&
   matrix_brush(void)
   {
-    return m_paths[m_selected_path].m_matrix_brush;
+    return m_paths[m_selected_path]->m_matrix_brush;
   }
 
   bool&
   repeat_window(void)
   {
-    return m_paths[m_selected_path].m_repeat_window;
+    return m_paths[m_selected_path]->m_repeat_window;
   }
 
   vec2&
   repeat_xy(void)
   {
-    return m_paths[m_selected_path].m_repeat_xy;
+    return m_paths[m_selected_path]->m_repeat_xy;
   }
 
   vec2&
   repeat_wh(void)
   {
-    return m_paths[m_selected_path].m_repeat_wh;
+    return m_paths[m_selected_path]->m_repeat_wh;
   }
 
   bool&
   clipping_window(void)
   {
-    return m_paths[m_selected_path].m_clipping_window;
+    return m_paths[m_selected_path]->m_clipping_window;
   }
 
   vec2&
   clipping_xy(void)
   {
-    return m_paths[m_selected_path].m_clipping_xy;
+    return m_paths[m_selected_path]->m_clipping_xy;
   }
 
   vec2&
   clipping_wh(void)
   {
-    return m_paths[m_selected_path].m_clipping_wh;
+    return m_paths[m_selected_path]->m_clipping_wh;
   }
 
   void
@@ -437,6 +850,9 @@ private:
 
   void
   draw_scene(bool drawing_wire_frame);
+
+  void
+  fill_way_effect(WavyEffect &data);
 
   command_line_argument_value<float> m_change_miter_limit_rate;
   command_line_argument_value<float> m_change_stroke_width_rate;
@@ -448,7 +864,6 @@ private:
   command_line_argument_value<bool> m_print_path;
   color_stop_arguments m_color_stop_args;
   command_line_argument_value<std::string> m_image_file;
-  command_line_argument_value<unsigned int> m_image_slack;
   command_line_argument_value<bool> m_use_atlas;
   command_line_argument_value<int> m_sub_image_x, m_sub_image_y;
   command_line_argument_value<int> m_sub_image_w, m_sub_image_h;
@@ -472,7 +887,7 @@ private:
   command_line_argument_value<float> m_initial_pan_x;
   command_line_argument_value<float> m_initial_pan_y;
 
-  std::vector<PerPath> m_paths;
+  std::vector<reference_counted_ptr<PerPath> > m_paths;
   reference_counted_ptr<Image> m_image;
   uvec2 m_image_offset, m_image_size;
   std::vector<named_color_stop> m_color_stops;
@@ -480,29 +895,24 @@ private:
   reference_counted_ptr<const FontBase> m_font;
 
   vecN<std::string, number_gradient_draw_modes> m_gradient_mode_labels;
-  vecN<std::string, Painter::number_cap_styles> m_cap_labels;
-  vecN<std::string, Painter::number_join_styles> m_join_labels;
-  vecN<std::string, Painter::fill_rule_data_count> m_fill_labels;
   vecN<std::string, number_image_filter_modes> m_image_filter_mode_labels;
-  vecN<std::string, number_anti_alias_modes> m_anti_alias_mode_labels;
-  vecN<std::string, number_stroking_modes> m_stroke_mode_labels;
   vecN<std::string, number_fill_modes> m_draw_fill_labels;
-  vecN<enum Painter::stroking_method_t, number_stroking_modes> m_stroke_mode_values;
-  vecN<enum Painter::shader_anti_alias_t, number_anti_alias_modes> m_shader_anti_alias_mode_values;
+  vecN<std::string, PainterBrush::number_spread_types> m_spread_type_labels;
+  vecN<std::string, fill_by_number_modes> m_fill_by_mode_labels;
 
-  PainterPackedValue<PainterBrush> m_black_pen;
-  PainterPackedValue<PainterBrush> m_white_pen;
-  PainterPackedValue<PainterBrush> m_stroke_pen;
-  PainterPackedValue<PainterBrush> m_draw_line_pen;
-  PainterPackedValue<PainterBrush> m_blue_pen;
-  PainterPackedValue<PainterBrush> m_red_pen;
-  PainterPackedValue<PainterBrush> m_green_pen;
+  PainterData::brush_value m_black_pen;
+  PainterData::brush_value m_white_pen;
+  PainterData::brush_value m_stroke_pen;
+  PainterData::brush_value m_draw_line_pen;
+  PainterData::brush_value m_blue_pen;
+  PainterData::brush_value m_red_pen;
+  PainterData::brush_value m_green_pen;
 
   Path m_rect;
 
   unsigned int m_selected_path;
-  unsigned int m_join_style;
-  unsigned int m_cap_style;
+  enum Painter::join_style m_join_style;
+  enum Painter::cap_style m_cap_style;
 
   /* m_dash pattern:
       0 -> undashed stroking
@@ -522,12 +932,11 @@ private:
     return m_dash - 1;
   }
 
-  bool m_have_miter_limit;
   float m_miter_limit, m_stroke_width;
   unsigned int m_draw_fill;
-  unsigned int m_aa_stroke_mode;
-  unsigned int m_stroking_mode;
-  unsigned int m_aa_fill_mode;
+  bool m_aa_stroke_mode;
+  enum Painter::stroking_method_t m_stroking_mode;
+  bool m_aa_fill_mode;
   unsigned int m_active_color_stop;
   unsigned int m_gradient_draw_mode;
   unsigned int m_image_filter;
@@ -535,47 +944,98 @@ private:
   bool m_draw_stats;
   float m_curve_flatness;
   bool m_draw_path_pts;
+  bool m_use_path_effect;
 
   bool m_wire_frame;
   bool m_stroke_width_in_pixels;
 
-  bool m_fill_by_clipping;
+  int m_fill_by_mode;
   bool m_draw_grid;
 
-  simple_time m_draw_timer, m_fps_timer;
+  simple_time m_draw_timer, m_fps_timer, m_phase_timer;
   Path m_grid_path;
   bool m_grid_path_dirty;
 
   Path m_clip_window_path;
   bool m_clip_window_path_dirty;
+
+  float3x3 m_pixel_matrix;
+  int m_show_surface, m_last_shown_surface;
+
+  PathDashEffect m_current_effect;
+
+  bool m_use_shader_effect;
+  PainterStrokeShader m_stroke_shader;
+  PainterDashedStrokeShaderSet m_dashed_stroke_shader;
 };
 
 ///////////////////////////////////
 // PerPath methods
 PerPath::
-PerPath(const Path &path, const std::string &label, int w, int h, bool from_gylph):
-  m_path(path),
+PerPath(Path &path, const std::string &label, int w, int h, bool from_gylph):
   m_label(label),
   m_from_glyph(from_gylph),
   m_fill_rule(Painter::odd_even_fill_rule),
-  m_end_fill_rule(Painter::fill_rule_data_count),
+  m_end_fill_rule(Painter::number_fill_rule),
   m_shear(1.0f, 1.0f),
   m_shear2(1.0f, 1.0f),
   m_angle(0.0f),
-  m_translate_brush(false),
   m_matrix_brush(false),
-  m_repeat_gradient(true),
+  m_gradient_spread_type(PainterBrush::spread_repeat),
   m_repeat_window(false),
-  m_clipping_window(false)
+  m_repeat_window_spread_type_x(PainterBrush::spread_repeat),
+  m_repeat_window_spread_type_y(PainterBrush::spread_repeat),
+  m_clipping_window(false),
+  m_path_ptr(&m_path_v)
+{
+  m_path_v.swap(path);
+  common_init(w, h);
+}
+
+PerPath::
+PerPath(const Path *path, const std::string &label, int w, int h, bool from_gylph):
+  m_label(label),
+  m_from_glyph(from_gylph),
+  m_fill_rule(Painter::odd_even_fill_rule),
+  m_end_fill_rule(Painter::number_fill_rule),
+  m_shear(1.0f, 1.0f),
+  m_shear2(1.0f, 1.0f),
+  m_angle(0.0f),
+  m_matrix_brush(false),
+  m_gradient_spread_type(PainterBrush::spread_repeat),
+  m_repeat_window(false),
+  m_repeat_window_spread_type_x(PainterBrush::spread_repeat),
+  m_repeat_window_spread_type_y(PainterBrush::spread_repeat),
+  m_clipping_window(false),
+  m_path_ptr(path)
+{
+  common_init(w, h);
+}
+
+void
+PerPath::
+common_init(int w, int h)
 {
   m_end_fill_rule =
-    m_path.tessellation()->filled()->subset(0).winding_numbers().size() + Painter::fill_rule_data_count;
+    path().tessellation().filled().root_subset().winding_numbers().size() + Painter::number_fill_rule;
 
   /* set transformation to center and contain path. */
   vec2 p0, p1, delta, dsp(w, h), ratio, mid;
+  const Rect &R(path().tessellation().bounding_box());
   float mm;
-  p0 = m_path.tessellation()->bounding_box_min();
-  p1 = m_path.tessellation()->bounding_box_max();
+
+  p0 = R.m_min_point;
+  p1 = R.m_max_point;
+
+  if (m_from_glyph)
+    {
+      /* the path is rendered y-flipped, so we need to adjust
+       * p0 and p1 correctly for it.
+       */
+      p0.y() *= -1.0f;
+      p1.y() *= -1.0f;
+      std::swap(p0.y(), p1.y());
+    }
 
   delta = p1 - p0;
   ratio = delta / dsp;
@@ -583,9 +1043,11 @@ PerPath(const Path &path, const std::string &label, int w, int h, bool from_gylp
   mid = 0.5 * (p1 + p0);
 
   ScaleTranslate<float> sc, tr1, tr2;
+
   tr1.translation(-mid);
-  sc.scale( 1.0f / mm);
+  sc.scale(1.0f / mm);
   tr2.translation(dsp * 0.5f);
+
   m_path_zoomer.transformation(tr2 * sc * tr1);
 
   m_gradient_p0 = p0;
@@ -597,12 +1059,12 @@ PerPath(const Path &path, const std::string &label, int w, int h, bool from_gylp
   m_sweep_repeat_factor = 1.0f;
 
   m_repeat_xy = vec2(0.0f, 0.0f);
-  m_repeat_wh = m_path.tessellation()->bounding_box_max() - m_path.tessellation()->bounding_box_min();
+  m_repeat_wh = p1 - p0;
 
-  m_clipping_xy = m_path.tessellation()->bounding_box_min();
+  m_clipping_xy = p0;
   m_clipping_wh = m_repeat_wh;
 
-  extract_path_info(m_path, &m_pts, &m_ctl_pts, &m_arc_center_pts, &m_path_string);
+  extract_path_info(path(), &m_pts, &m_ctl_pts, &m_arc_center_pts, &m_path_string);
 }
 
 //////////////////////////////////////
@@ -637,7 +1099,6 @@ painter_stroke_test(void):
                *this),
   m_color_stop_args(*this),
   m_image_file("", "image", "if a valid file name, apply an image to drawing the fill", *this),
-  m_image_slack(0, "image_slack", "amount of slack on tiles when loading image", *this),
   m_use_atlas(true, "use_atlas",
               "If false, each image is realized as a texture; if "
               "GL_ARB_bindless_texture or GL_NV_bindless_texture "
@@ -683,27 +1144,30 @@ painter_stroke_test(void):
   m_initial_pan_y(0.0f, "initial_pan_y", "initial y-offset for view if init_pan_zoom is true", *this),
   m_selected_path(0),
   m_join_style(Painter::rounded_joins),
-  m_cap_style(Painter::square_caps),
+  m_cap_style(Painter::flat_caps),
   m_dash(0),
-  m_have_miter_limit(true),
   m_miter_limit(5.0f),
   m_stroke_width(10.0f),
-  m_draw_fill(draw_fill_path),
-  m_aa_stroke_mode(by_anti_alias_auto),
-  m_stroking_mode(stroke_auto_path),
-  m_aa_fill_mode(by_anti_alias_auto),
+  m_draw_fill(dont_draw_fill_path),
+  m_aa_stroke_mode(true),
+  m_stroking_mode(Painter::stroking_method_fastest),
+  m_aa_fill_mode(true),
   m_active_color_stop(0),
   m_gradient_draw_mode(draw_no_gradient),
   m_image_filter(image_nearest_filter),
   m_apply_mipmapping(false),
   m_draw_stats(false),
   m_draw_path_pts(false),
+  m_use_path_effect(false),
   m_wire_frame(false),
   m_stroke_width_in_pixels(false),
-  m_fill_by_clipping(false),
+  m_fill_by_mode(fill_by_filled_path),
   m_draw_grid(false),
   m_grid_path_dirty(true),
-  m_clip_window_path_dirty(true)
+  m_clip_window_path_dirty(true),
+  m_show_surface(0),
+  m_last_shown_surface(0),
+  m_use_shader_effect(false)
 {
   std::cout << "Controls:\n"
             << "\tv: cycle through stroking modes\n"
@@ -734,20 +1198,24 @@ painter_stroke_test(void):
             << "\tctrl-i: toggle mipmap filtering when applying an image\n"
             << "\ts: cycle through defined color stops for gradient\n"
             << "\tg: cycle through gradient types (linear or radial)\n"
-            << "\th: toggle repeat gradient\n"
-            << "\tt: toggle translate brush\n"
-            << "\ty: toggle matrix brush\n"
+            << "\th: cycle though gradient spead types\n"
+            << "\ty: toggle applying matrix brush so that brush appears to be in pixel coordinates\n"
             << "\to: toggle clipping window\n"
+            << "\tctrl-o: cycle through buffers to show\n"
             << "\tz: increase/decrease curve flatness\n"
             << "\t4,6,2,8 (number pad): change location of clipping window\n"
             << "\tctrl-4,6,2,8 (number pad): change size of clipping window\n"
             << "\tw: toggle brush repeat window active\n"
+            << "\tshift-w: cycle though y-repeat window spread modes\n"
+            << "\tctrl-w: cycle though y-repeat window spread modes\n"
             << "\tarrow keys: change location of brush repeat window\n"
             << "\tctrl-arrow keys: change size of brush repeat window\n"
             << "\tMiddle Mouse Draw: set p0(starting position top left) {drawn black with white inside} of gradient\n"
             << "\t1/2 : decrease/increase r0 of gradient(hold left-shift for slower rate and right shift for faster)\n"
             << "\t3/4 : decrease/increase r1 of gradient(hold left-shift for slower rate and right shift for faster)\n"
             << "\tl: draw Painter stats\n"
+            << "\tx: toggle use path effect to perform dashing\n"
+            << "\tctrl-x: toggle custom stroke shader effect\n"
             << "\tRight Mouse Draw: set p1(starting position bottom right) {drawn white with black inside} of gradient\n"
             << "\tLeft Mouse Drag: pan\n"
             << "\tHold Left Mouse, then drag up/down: zoom out/in\n";
@@ -757,46 +1225,19 @@ painter_stroke_test(void):
   m_gradient_mode_labels[draw_radial_gradient] = "draw_radial_gradient";
   m_gradient_mode_labels[draw_sweep_gradient] = "draw_sweep_gradient";
 
-  m_join_labels[Painter::no_joins] = "no_joins";
-  m_join_labels[Painter::rounded_joins] = "rounded_joins";
-  m_join_labels[Painter::bevel_joins] = "bevel_joins";
-  m_join_labels[Painter::miter_clip_joins] = "miter_clip_joins";
-  m_join_labels[Painter::miter_bevel_joins] = "miter_bevel_joins";
-  m_join_labels[Painter::miter_joins] = "miter_joins";
+  m_spread_type_labels[PainterBrush::spread_clamp] = "spread_clamp";
+  m_spread_type_labels[PainterBrush::spread_repeat] = "spread_repeat";
+  m_spread_type_labels[PainterBrush::spread_mirror_repeat] = "spread_mirror_repeat";
+  m_spread_type_labels[PainterBrush::spread_mirror] = "spread_mirror";
 
-  m_cap_labels[Painter::flat_caps] = "flat_caps";
-  m_cap_labels[Painter::rounded_caps] = "rounded_caps";
-  m_cap_labels[Painter::square_caps] = "square_caps";
-
-  m_fill_labels[Painter::odd_even_fill_rule] = "odd_even_fill_rule";
-  m_fill_labels[Painter::nonzero_fill_rule] = "nonzero_fill_rule";
-  m_fill_labels[Painter::complement_odd_even_fill_rule] = "complement_odd_even_fill_rule";
-  m_fill_labels[Painter::complement_nonzero_fill_rule] = "complement_nonzero_fill_rule";
+  m_fill_by_mode_labels[fill_by_filled_path] = "FilledPath";
+  m_fill_by_mode_labels[fill_by_clipping] = "clipping against FilledPath";
+  m_fill_by_mode_labels[fill_by_shader_filled_path] = "ShaderFilledPath";
 
   m_image_filter_mode_labels[no_image] = "no_image";
   m_image_filter_mode_labels[image_nearest_filter] = "image_nearest_filter";
   m_image_filter_mode_labels[image_linear_filter] = "image_linear_filter";
   m_image_filter_mode_labels[image_cubic_filter] = "image_cubic_filter";
-
-  m_anti_alias_mode_labels[no_anti_alias] = "no_anti_alias";
-  m_anti_alias_mode_labels[by_anti_alias_auto] = "by_anti_alias_auto";
-  m_anti_alias_mode_labels[by_anti_alias_simple] = "by_anti_alias_simple";
-  m_anti_alias_mode_labels[by_anti_alias_hq] = "by_anti_alias_hq";
-  m_anti_alias_mode_labels[by_anti_alias_fastest] = "by_anti_alias_fastest";
-
-  m_shader_anti_alias_mode_values[no_anti_alias] = Painter::shader_anti_alias_none;
-  m_shader_anti_alias_mode_values[by_anti_alias_auto] = Painter::shader_anti_alias_auto;
-  m_shader_anti_alias_mode_values[by_anti_alias_simple] = Painter::shader_anti_alias_simple;
-  m_shader_anti_alias_mode_values[by_anti_alias_hq] = Painter::shader_anti_alias_high_quality;
-  m_shader_anti_alias_mode_values[by_anti_alias_fastest] = Painter::shader_anti_alias_fastest;
-
-  m_stroke_mode_labels[stroke_linear_path] = "stroke_linear_path";
-  m_stroke_mode_labels[stroke_arc_path] = "stroke_arc_path";
-  m_stroke_mode_labels[stroke_auto_path] = "stroke_auto_path";
-
-  m_stroke_mode_values[stroke_linear_path] = Painter::stroking_method_linear;
-  m_stroke_mode_values[stroke_arc_path] = Painter::stroking_method_arc;
-  m_stroke_mode_values[stroke_auto_path] = Painter::stroking_method_auto;
 
   m_draw_fill_labels[draw_fill_path] = "draw_fill";
   m_draw_fill_labels[draw_fill_path_occludes_stroking] = "draw_fill_path_occludes_stroking";
@@ -881,7 +1322,7 @@ update_cts_params(void)
     {
       m_grid_path_dirty = true;
       m_stroke_width -= speed_stroke;
-      m_stroke_width = fastuidraw::t_max(m_stroke_width, 0.0f);
+      m_stroke_width = t_max(m_stroke_width, 0.0f);
     }
 
   if (keyboard_state[SDL_SCANCODE_RIGHTBRACKET] || keyboard_state[SDL_SCANCODE_LEFTBRACKET])
@@ -909,13 +1350,13 @@ update_cts_params(void)
       if (keyboard_state[SDL_SCANCODE_UP])
         {
           changer->y() += delta_y;
-          changer->y() = fastuidraw::t_max(0.0f, changer->y());
+          changer->y() = t_max(0.0f, changer->y());
         }
 
       if (keyboard_state[SDL_SCANCODE_DOWN])
         {
           changer->y() -= delta_y;
-          changer->y() = fastuidraw::t_max(0.0f, changer->y());
+          changer->y() = t_max(0.0f, changer->y());
         }
 
       if (keyboard_state[SDL_SCANCODE_RIGHT])
@@ -926,7 +1367,7 @@ update_cts_params(void)
       if (keyboard_state[SDL_SCANCODE_LEFT])
         {
           changer->x() -= delta;
-          changer->x() = fastuidraw::t_max(0.0f, changer->x());
+          changer->x() = t_max(0.0f, changer->x());
         }
 
       if (keyboard_state[SDL_SCANCODE_UP] || keyboard_state[SDL_SCANCODE_DOWN]
@@ -945,7 +1386,7 @@ update_cts_params(void)
       if (keyboard_state[SDL_SCANCODE_1])
         {
           gradient_r0() -= delta;
-          gradient_r0() = fastuidraw::t_max(0.0f, gradient_r0());
+          gradient_r0() = t_max(0.0f, gradient_r0());
         }
       if (keyboard_state[SDL_SCANCODE_2])
         {
@@ -955,7 +1396,7 @@ update_cts_params(void)
       if (keyboard_state[SDL_SCANCODE_3])
         {
           gradient_r1() -= delta;
-          gradient_r1() = fastuidraw::t_max(0.0f, gradient_r1());
+          gradient_r1() = t_max(0.0f, gradient_r1());
         }
       if (keyboard_state[SDL_SCANCODE_4])
         {
@@ -991,7 +1432,7 @@ update_cts_params(void)
         }
     }
 
-  if (is_miter_join_style(m_join_style) && m_have_miter_limit)
+  if (Painter::is_miter_join(m_join_style))
     {
       if (keyboard_state[SDL_SCANCODE_N])
         {
@@ -1001,7 +1442,7 @@ update_cts_params(void)
       if (keyboard_state[SDL_SCANCODE_B])
         {
           m_miter_limit -= m_change_miter_limit_rate.value() * speed;
-          m_miter_limit = fastuidraw::t_max(0.0f, m_miter_limit);
+          m_miter_limit = t_max(0.0f, m_miter_limit);
         }
 
       if (keyboard_state[SDL_SCANCODE_N] || keyboard_state[SDL_SCANCODE_B])
@@ -1065,34 +1506,30 @@ fill_centered_rect(const vec2 &pt, float r, const PainterData &draw)
 
   rect.m_min_point = pt - sz;
   rect.m_max_point = pt + sz;
-  m_painter->fill_rect(draw, rect, m_shader_anti_alias_mode_values[m_aa_fill_mode]);
+  m_painter->fill_rect(draw, rect, m_aa_fill_mode);
 }
 
 vec2
 painter_stroke_test::
-brush_item_coordinate(ivec2 scr)
+brush_item_coordinate(ivec2 q)
 {
   vec2 p;
-  p = item_coordinates(scr);
 
   if (matrix_brush())
     {
-      p *= zoomer().transformation().scale();
+      p = vec2(q);
     }
-
-  if (translate_brush())
+  else
     {
-      p += zoomer().transformation().translation();
+      p = item_coordinates(q);
     }
   return p;
 }
 
 vec2
 painter_stroke_test::
-item_coordinates(ivec2 scr)
+item_coordinates(vec2 p)
 {
-  vec2 p(scr);
-
   /* unapply zoomer()
    */
   p = zoomer().transformation().apply_inverse_to_point(p);
@@ -1105,7 +1542,7 @@ item_coordinates(ivec2 scr)
    */
   float s, c, a;
   float2x2 tr;
-  a = -angle() * M_PI / 180.0f;
+  a = -angle() * FASTUIDRAW_PI / 180.0f;
   s = t_sin(a);
   c = t_cos(a);
 
@@ -1122,12 +1559,8 @@ item_coordinates(ivec2 scr)
 
   /* unapply glyph-flip
    */
-  if (m_paths[m_selected_path].m_from_glyph)
+  if (m_paths[m_selected_path]->m_from_glyph)
     {
-      float y;
-      y = path().tessellation()->bounding_box_min().y()
-        + path().tessellation()->bounding_box_max().y();
-      p.y() -= y;
       p.y() *= -1.0f;
     }
 
@@ -1177,13 +1610,14 @@ handle_event(const SDL_Event &ev)
           break;
 
         case SDLK_v:
-          cycle_value(m_stroking_mode, ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT), number_stroking_modes);
-          std::cout << "Stroking mode set to: " << m_stroke_mode_labels[m_stroking_mode] << "\n";
+          cycle_value(m_stroking_mode, ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT),
+                      Painter::number_stroking_methods);
+          std::cout << "Stroking mode set to: " << Painter::label(m_stroking_mode) << "\n";
           break;
 
         case SDLK_k:
           cycle_value(m_selected_path, ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT), m_paths.size());
-          std::cout << "Path " << m_paths[m_selected_path].m_label << " selected\n";
+          std::cout << "Path " << m_paths[m_selected_path]->m_label << " selected\n";
           m_clip_window_path_dirty = true;
           break;
 
@@ -1218,7 +1652,7 @@ handle_event(const SDL_Event &ev)
             }
           else if(ev.key.keysym.mod & KMOD_SHIFT)
             {
-              std::cout << m_paths[m_selected_path].m_path_string;
+              std::cout << m_paths[m_selected_path]->m_path_string;
             }
           else
             {
@@ -1235,47 +1669,67 @@ handle_event(const SDL_Event &ev)
           break;
 
         case SDLK_o:
-          clipping_window() = !clipping_window();
-          std::cout << "Clipping window: " << on_off(clipping_window()) << "\n";
+          if (ev.key.keysym.mod & KMOD_CTRL)
+            {
+              if (ev.key.keysym.mod & (KMOD_SHIFT | KMOD_ALT))
+                {
+                  if (m_show_surface > 0)
+                    {
+                      --m_show_surface;
+                    }
+                }
+              else
+                {
+                  ++m_show_surface;
+                }
+            }
+          else
+            {
+              clipping_window() = !clipping_window();
+              std::cout << "Clipping window: " << on_off(clipping_window()) << "\n";
+            }
           break;
 
         case SDLK_w:
-          repeat_window() = !repeat_window();
-          std::cout << "Brush Repeat window: " << on_off(repeat_window()) << "\n";
+          if (!(ev.key.keysym.mod & (KMOD_SHIFT | KMOD_CTRL)))
+            {
+              repeat_window() = !repeat_window();
+              std::cout << "Brush Repeat window: " << on_off(repeat_window()) << "\n";
+            }
+          else if (repeat_window())
+            {
+              if (ev.key.keysym.mod & KMOD_SHIFT)
+                {
+                  cycle_value(repeat_window_spread_type_x(), false, PainterBrush::number_spread_types);
+                  std::cout << "Brush Repeat window x-spread-type set to "
+                            << m_spread_type_labels[repeat_window_spread_type_x()]
+                            << "\n";
+                }
+
+              if (ev.key.keysym.mod & KMOD_CTRL)
+                {
+                  cycle_value(repeat_window_spread_type_y(), false, PainterBrush::number_spread_types);
+                  std::cout << "Brush Repeat window y-spread-type set to "
+                            << m_spread_type_labels[repeat_window_spread_type_y()]
+                            << "\n";
+                }
+            }
           break;
 
         case SDLK_y:
           matrix_brush() = !matrix_brush();
-          std::cout << "Matrix brush: " << on_off(matrix_brush()) << "\n";
-          break;
-
-        case SDLK_t:
-          translate_brush() = !translate_brush();
-          std::cout << "Translate brush: " << on_off(translate_brush()) << "\n";
+          std::cout << "Make brush appear as-if in pixel coordinates: " << on_off(matrix_brush()) << "\n";
           break;
 
         case SDLK_h:
           if (m_gradient_draw_mode != draw_no_gradient)
             {
-              repeat_gradient() = !repeat_gradient();
-              if (!repeat_gradient())
-                {
-                  std::cout << "non-";
-                }
-              std::cout << "repeat gradient mode\n";
-            }
-          break;
-
-        case SDLK_m:
-          if (is_miter_join_style(m_join_style))
-            {
-              m_have_miter_limit = !m_have_miter_limit;
-              std::cout << "Miter limit ";
-              if (!m_have_miter_limit)
-                {
-                  std::cout << "NOT ";
-                }
-              std::cout << "applied\n";
+              cycle_value(gradient_spread_type(),
+                          ev.key.keysym.mod & KMOD_SHIFT,
+                          PainterBrush::number_spread_types);
+              std::cout << "Gradient spread type set to : "
+                        << m_spread_type_labels[gradient_spread_type()]
+                        << "\n";
             }
           break;
 
@@ -1296,16 +1750,6 @@ handle_event(const SDL_Event &ev)
                 {
                   cycle_value(m_image_filter, ev.key.keysym.mod & KMOD_SHIFT, number_image_filter_modes);
                   std::cout << "Image filter mode set to: " << m_image_filter_mode_labels[m_image_filter] << "\n";
-                  if (m_image_filter == image_linear_filter && m_image->slack() < 1)
-                    {
-                      std::cout << "\tWarning: image slack = " << m_image->slack()
-                                << " which insufficient to correctly apply linear filter (requires atleast 1)\n";
-                    }
-                  else if (m_image_filter == image_cubic_filter && m_image->slack() < 2)
-                    {
-                      std::cout << "\tWarning: image slack = " << m_image->slack()
-                                << " which insufficient to correctly apply cubic filter (requires atleast 2)\n";
-                    }
                 }
             }
           break;
@@ -1315,6 +1759,19 @@ handle_event(const SDL_Event &ev)
             {
               cycle_value(m_active_color_stop, ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT), m_color_stops.size());
               std::cout << "Drawing color stop: " << m_color_stops[m_active_color_stop].first << "\n";
+            }
+          break;
+
+        case SDLK_x:
+          if (ev.key.keysym.mod & KMOD_CTRL)
+            {
+              m_use_shader_effect = !m_use_shader_effect;
+              std::cout << "Use shader effect set to: " << on_off(m_use_shader_effect) << "\n";
+            }
+          else
+            {
+              m_use_path_effect = !m_use_path_effect;
+              std::cout << "Use path effect set to: " << on_off(m_use_path_effect) << "\n";
             }
           break;
 
@@ -1328,11 +1785,12 @@ handle_event(const SDL_Event &ev)
 
         case SDLK_j:
           cycle_value(m_join_style, ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT), Painter::number_join_styles);
-          std::cout << "Join drawing mode set to: " << m_join_labels[m_join_style] << "\n";
+          std::cout << "Join drawing mode set to: " << Painter::label(m_join_style) << "\n";
           break;
 
         case SDLK_d:
           cycle_value(m_dash, ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT), m_dash_patterns.size() + 1);
+          m_current_effect.clear();
           if (is_dashed_stroking())
             {
               unsigned int P;
@@ -1347,6 +1805,9 @@ handle_event(const SDL_Event &ev)
                   std::cout << "Draw(" << m_dash_patterns[P][i].m_draw_length
                             << "), Space(" << m_dash_patterns[P][i].m_space_length
                             << ")";
+
+                  m_current_effect.add_dash(m_dash_patterns[P][i].m_draw_length,
+                                            m_dash_patterns[P][i].m_space_length);
                 }
               std::cout << "}\n";
             }
@@ -1358,7 +1819,7 @@ handle_event(const SDL_Event &ev)
 
         case SDLK_c:
           cycle_value(m_cap_style, ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT), Painter::number_cap_styles);
-          std::cout << "Cap drawing mode set to: " << m_cap_labels[m_cap_style] << "\n";
+          std::cout << "Cap drawing mode set to: " << Painter::label(m_cap_style) << "\n";
           break;
 
         case SDLK_r:
@@ -1367,9 +1828,11 @@ handle_event(const SDL_Event &ev)
               cycle_value(current_fill_rule(),
                           ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT),
                           current_end_fill_rule() + 1);
-              if (current_fill_rule() < Painter::fill_rule_data_count)
+              if (current_fill_rule() < Painter::number_fill_rule)
                 {
-                  std::cout << "Fill rule set to: " << m_fill_labels[current_fill_rule()] << "\n";
+                  std::cout << "Fill rule set to: "
+                            << Painter::label(static_cast<enum Painter::fill_rule_t>(current_fill_rule()))
+                            << "\n";
                 }
               else if (current_fill_rule() == current_end_fill_rule())
                 {
@@ -1379,8 +1842,8 @@ handle_event(const SDL_Event &ev)
                 {
                   c_array<const int> wnd;
                   int value;
-                  wnd = path().tessellation()->filled()->subset(0).winding_numbers();
-                  value = wnd[current_fill_rule() - Painter::fill_rule_data_count];
+                  wnd = path().tessellation().filled().root_subset().winding_numbers();
+                  value = wnd[current_fill_rule() - Painter::number_fill_rule];
                   std::cout << "Fill rule set to custom fill rule: winding_number == "
                             << value << "\n";
                 }
@@ -1390,16 +1853,8 @@ handle_event(const SDL_Event &ev)
         case SDLK_e:
           if (m_draw_fill != dont_draw_fill_path)
             {
-              m_fill_by_clipping = !m_fill_by_clipping;
-              std::cout << "Set to ";
-              if (m_fill_by_clipping)
-                {
-                  std::cout << "fill by drawing rectangle clipped to path\n";
-                }
-              else
-                {
-                  std::cout << "fill by drawing fill\n";
-                }
+              cycle_value(m_fill_by_mode, ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT), fill_by_number_modes);
+              std::cout << "Set to fill by " << m_fill_by_mode_labels[m_fill_by_mode] << "\n";
             }
           break;
 
@@ -1413,24 +1868,17 @@ handle_event(const SDL_Event &ev)
         case SDLK_u:
           if (m_draw_fill != dont_draw_fill_path)
             {
-              cycle_value(m_aa_fill_mode,
-                          ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT),
-                          number_anti_alias_modes);
+              m_aa_fill_mode = !m_aa_fill_mode;
               std::cout << "Filling anti-alias mode set to: "
-                        << m_anti_alias_mode_labels[m_aa_fill_mode]
-                        << "\n";
+                        << on_off(m_aa_fill_mode) << "\n";
             }
           break;
 
         case SDLK_a:
           if (m_stroke_width > 0.0f)
             {
-              cycle_value(m_aa_stroke_mode,
-                          ev.key.keysym.mod & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT),
-                          number_anti_alias_modes);
-              std::cout << "Stroking anti-alias mode set to: "
-                        << m_anti_alias_mode_labels[m_aa_stroke_mode]
-                        << "\n";
+              m_aa_stroke_mode = !m_aa_stroke_mode;
+              std::cout << on_off(m_aa_stroke_mode) << "\n";
             }
           break;
 
@@ -1475,7 +1923,7 @@ construct_paths(int w, int h)
           read_path(P, buffer.str());
           if (P.number_contours() > 0)
             {
-              m_paths.push_back(PerPath(P, file, w, h, false));
+              m_paths.push_back(FASTUIDRAWnew PerPath(P, file, w, h, false));
             }
         }
     }
@@ -1487,12 +1935,12 @@ construct_paths(int w, int h)
       Glyph g;
 
       glyph_code = m_font->glyph_code(character_code);
-      g = m_glyph_cache->fetch_glyph(renderer, m_font, glyph_code);
+      g = m_painter->glyph_cache().fetch_glyph(renderer, m_font.get(), glyph_code);
       if (g.valid() && g.path().number_contours() > 0)
         {
           std::ostringstream str;
           str << "character code:" << character_code;
-          m_paths.push_back(PerPath(g.path(), str.str(), w, h, true));
+          m_paths.push_back(FASTUIDRAWnew PerPath(&g.path(), str.str(), w, h, true));
         }
     }
 
@@ -1520,19 +1968,19 @@ construct_paths(int w, int h)
            << vec2(150.0f, 100.0f)
            << Path::contour_close()
            << vec2(300.0f, 300.0f);
-      m_paths.push_back(PerPath(path, "Default Path", w, h, false));
+      m_paths.push_back(FASTUIDRAWnew PerPath(path, "Default Path", w, h, false));
     }
 
   if (m_init_pan_zoom.value())
     {
-      for (PerPath &P : m_paths)
+      for (const auto &P : m_paths)
         {
           ScaleTranslate<float> v;
 
           v.translation_x(m_initial_pan_x.value());
           v.translation_y(m_initial_pan_y.value());
           v.scale(m_initial_zoom.value());
-          P.m_path_zoomer.transformation(v);
+          P->m_path_zoomer.transformation(v);
         }
     }
 }
@@ -1542,46 +1990,34 @@ painter_stroke_test::
 per_path_processing(void)
 {
   m_miter_limit = 0.0f;
-  for(const PerPath &P : m_paths)
+  for(const auto &P : m_paths)
     {
-      reference_counted_ptr<const TessellatedPath> tess;
-      const StrokedCapsJoins *stroked;
-      const PainterAttributeData *data;
-      c_array<const PainterAttribute> miter_points;
+      c_array<const TessellatedPath::join> joins;
+      const TessellatedPath *tess;
 
-      tess = P.m_path.tessellation(-1.0f);
-      stroked = &tess->stroked()->caps_joins();
-      data = &stroked->miter_clip_joins();
-
-      for(unsigned int J = 0, endJ = stroked->number_joins(); J < endJ; ++J)
+      tess = &P->path().tessellation(-1.0f);
+      joins = tess->partitioned().joins();
+      for(const TessellatedPath::join &J : joins)
         {
-          unsigned int chunk;
-
-          chunk = stroked->join_chunk(J);
-          miter_points = data->attribute_data_chunk(chunk);
-          for(unsigned p = 0, endp = miter_points.size(); p < endp; ++p)
-            {
-              float v;
-              StrokedPoint pt;
-
-              StrokedPoint::unpack_point(&pt, miter_points[p]);
-              v = pt.miter_distance();
-              if (std::isfinite(v))
-                {
-                  m_miter_limit = fastuidraw::t_max(m_miter_limit, fastuidraw::t_abs(v));
-                }
-            }
+          /* TODO: if the join is so that the miter-distance
+           * is infinity (because the join happens at anti-parallel
+           * value), we should make m_miter_limit quite large.
+           * The value of m_miter_distance() is -1 if the
+           * miter-distance is (too floating point arithmatic)
+           * infinity.
+           */
+          m_miter_limit = t_max(m_miter_limit, J.m_miter_distance);
         }
 
       if (m_print_path.value())
         {
-          std::cout << "Path \"" << P.m_label << "\" tessellated:\n";
+          std::cout << "Path \"" << P->m_label << "\" tessellated:\n";
           for(unsigned int c = 0; c < tess->number_contours(); ++c)
             {
               std::cout << "\tContour #" << c << "\n";
               for(unsigned int e = 0; e < tess->number_edges(c); ++e)
                 {
-                  fastuidraw::c_array<const fastuidraw::TessellatedPath::segment> segs;
+                  c_array<const TessellatedPath::segment> segs;
 
                   std::cout << "\t\tEdge #" << e << " has "
                             << tess->edge_segment_data(c, e).size() << " segments\n";
@@ -1601,7 +2037,7 @@ per_path_processing(void)
             }
         }
     }
-  m_miter_limit = fastuidraw::t_min(100.0f, m_miter_limit); //100 is an insane miter limit.
+  m_miter_limit = t_min(100.0f, m_miter_limit); //100 is an insane miter limit.
 }
 
 void
@@ -1613,23 +2049,22 @@ construct_color_stops(void)
         end = m_color_stop_args.values().end();
       iter != end; ++iter)
     {
-      reference_counted_ptr<ColorStopSequenceOnAtlas> h;
-      h = FASTUIDRAWnew ColorStopSequenceOnAtlas(iter->second->m_stops,
-                                                 m_painter->colorstop_atlas(),
-                                                 iter->second->m_discretization);
+      reference_counted_ptr<ColorStopSequence> h;
+      h = m_painter->colorstop_atlas().create(iter->second->m_stops,
+                                              iter->second->m_discretization);
       m_color_stops.push_back(named_color_stop(iter->first, h));
     }
 
   if (m_color_stops.empty())
     {
-      ColorStopSequence S;
-      reference_counted_ptr<ColorStopSequenceOnAtlas> h;
+      ColorStopArray S;
+      reference_counted_ptr<ColorStopSequence> h;
 
       S.add(ColorStop(u8vec4(0, 255, 0, 255), 0.0f));
       S.add(ColorStop(u8vec4(0, 255, 255, 255), 0.33f));
       S.add(ColorStop(u8vec4(255, 255, 0, 255), 0.66f));
       S.add(ColorStop(u8vec4(255, 0, 0, 255), 1.0f));
-      h = FASTUIDRAWnew ColorStopSequenceOnAtlas(S, m_painter->colorstop_atlas(), 8);
+      h = m_painter->colorstop_atlas().create(S, 8);
       m_color_stops.push_back(named_color_stop("Default ColorStop Sequence", h));
     }
 }
@@ -1664,25 +2099,49 @@ construct_dash_patterns(void)
 
 void
 painter_stroke_test::
+fill_way_effect(WavyEffect &data)
+{
+  uint32_t ms;
+  float fc, fs, fc2, fs2;
+
+  ms = m_phase_timer.elapsed();
+  ms = ms % 4000;
+
+  data.m_phase = static_cast<float>(ms) / 2000.0f * FASTUIDRAW_PI;
+  fc = t_cos(data.m_phase);
+  fs = t_sin(data.m_phase);
+  fc2 = t_cos(2.0f * data.m_phase);
+  fs2 = t_sin(2.0f * data.m_phase);
+
+  data.m_domain_coeff = 8.0f * FASTUIDRAW_PI / (m_stroke_width * 10.0f);
+  data.m_cos_coeffs = vec4(+8.0f * fc,
+                           -4.0f * fs,
+                           +2.0f * fs2,
+                           -1.0f * fc2);
+  data.m_sin_coeffs = vec4(+1.3f * fs,
+                           -2.0f * fc,
+                           +4.0f * fs2,
+                           -8.0f * fc2);
+}
+
+void
+painter_stroke_test::
 draw_scene(bool drawing_wire_frame)
 {
-  if (!m_draw_line_pen)
+  m_painter->save();
+  if (!m_draw_line_pen.packed())
     {
       PainterBrush br;
-      br.pen(m_draw_line_red.value(), m_draw_line_green.value(),
+      br.color(m_draw_line_red.value(), m_draw_line_green.value(),
              m_draw_line_blue.value(), m_draw_line_alpha.value());
-      m_draw_line_pen = m_painter->packed_value_pool().create_packed_value(br);
+      m_draw_line_pen = m_painter->packed_value_pool().create_packed_brush(br);
     }
 
-  if (m_paths[m_selected_path].m_from_glyph)
+  if (m_paths[m_selected_path]->m_from_glyph)
     {
       /* Glyphs have y-increasing upwards, rather than
        * downwards; so we reverse the y
        */
-      float y;
-      y = path().tessellation()->bounding_box_min().y()
-        + path().tessellation()->bounding_box_max().y();
-      m_painter->translate(vec2(0.0f, y));
       m_painter->shear(1.0f, -1.0f);
     }
 
@@ -1701,7 +2160,7 @@ draw_scene(bool drawing_wire_frame)
         }
 
       PainterBrush white;
-      white.pen(1.0f, 1.0f, 1.0f, 1.0f);
+      white.color(1.0f, 1.0f, 1.0f, 1.0f);
       PainterStrokeParams st;
       st.miter_limit(-1.0f);
       st.width(4.0f);
@@ -1710,7 +2169,7 @@ draw_scene(bool drawing_wire_frame)
       m_painter->stroke_path(PainterData(&white, &st), m_clip_window_path,
                              StrokingStyle()
                              .join_style(Painter::miter_clip_joins),
-                             Painter::shader_anti_alias_none);
+                             false);
       m_painter->restore();
       m_painter->clip_in_rect(Rect()
                               .min_point(clipping_xy())
@@ -1725,22 +2184,24 @@ draw_scene(bool drawing_wire_frame)
     {
       PainterBrush fill_brush;
 
-      fill_brush.pen(m_fill_red.value(), m_fill_green.value(),
-                     m_fill_blue.value(), m_fill_alpha.value());
-      if (translate_brush())
-        {
-          fill_brush.transformation_translate(zoomer().transformation().translation());
-        }
-      else
-        {
-          fill_brush.no_transformation_translation();
-        }
+      fill_brush.color(m_fill_red.value(), m_fill_green.value(),
+                       m_fill_blue.value(), m_fill_alpha.value());
 
       if (matrix_brush())
         {
-          float2x2 m;
-          m(0, 0) = m(1, 1) = zoomer().transformation().scale();
-          fill_brush.transformation_matrix(m);
+          /* We want the effect that the brush is in the pixel-coordinates
+           * so we make the transformation the same transformation
+           * that is applied to painter.
+           */
+          float m;
+          m = zoomer().transformation().scale();
+
+          fill_brush.no_transformation();
+          fill_brush.apply_translate(zoomer().transformation().translation());
+          fill_brush.apply_shear(m, m);
+          fill_brush.apply_shear(shear().x(), shear().y());
+          fill_brush.apply_rotate(angle() * FASTUIDRAW_PI / 180.0f);
+          fill_brush.apply_shear(shear2().x(), shear2().y());
         }
       else
         {
@@ -1749,7 +2210,9 @@ draw_scene(bool drawing_wire_frame)
 
       if (repeat_window())
         {
-          fill_brush.repeat_window(repeat_xy(), repeat_wh());
+          fill_brush.repeat_window(repeat_xy(), repeat_wh(),
+                                   repeat_window_spread_type_x(),
+                                   repeat_window_spread_type_y());
         }
       else
         {
@@ -1759,14 +2222,14 @@ draw_scene(bool drawing_wire_frame)
       if (m_gradient_draw_mode == draw_linear_gradient)
         {
           fill_brush.linear_gradient(m_color_stops[m_active_color_stop].second,
-                                     gradient_p0(), gradient_p1(), repeat_gradient());
+                                     gradient_p0(), gradient_p1(), gradient_spread_type());
         }
       else if (m_gradient_draw_mode == draw_radial_gradient)
         {
           fill_brush.radial_gradient(m_color_stops[m_active_color_stop].second,
                                      gradient_p0(), gradient_r0(),
                                      gradient_p1(), gradient_r1(),
-                                     repeat_gradient());
+                                     gradient_spread_type());
         }
       else if (m_gradient_draw_mode == draw_sweep_gradient)
         {
@@ -1776,7 +2239,7 @@ draw_scene(bool drawing_wire_frame)
                                     gradient_p0(), t_atan2(d.y(), d.x()),
                                     Painter::y_increases_downwards,
                                     Painter::clockwise, sweep_repeat_factor(),
-                                    repeat_gradient());
+                                    gradient_spread_type());
         }
       else
         {
@@ -1789,40 +2252,41 @@ draw_scene(bool drawing_wire_frame)
         }
       else
         {
-          enum PainterBrush::image_filter f;
-          unsigned int mip_max_level;
+          enum PainterImageBrushShader::filter_t f;
+          enum PainterImageBrushShader::mipmap_t mf;
 
           switch(m_image_filter)
             {
             case image_nearest_filter:
-              f = PainterBrush::image_filter_nearest;
+              f = PainterImageBrushShader::filter_nearest;
               break;
             case image_linear_filter:
-              f = PainterBrush::image_filter_linear;
+              f = PainterImageBrushShader::filter_linear;
               break;
             case image_cubic_filter:
-              f = PainterBrush::image_filter_cubic;
+              f = PainterImageBrushShader::filter_cubic;
               break;
             default:
               FASTUIDRAWassert(!"Incorrect value for m_image_filter!");
-              f = PainterBrush::image_filter_nearest;
+              f = PainterImageBrushShader::filter_nearest;
             }
-          mip_max_level = (m_apply_mipmapping) ? m_image->number_mipmap_levels() : 0u;
-          fill_brush.sub_image(m_image, m_image_offset, m_image_size, f,
-                               mip_max_level);
+          mf = (m_apply_mipmapping) ?
+            PainterImageBrushShader::apply_mipmapping:
+            PainterImageBrushShader::dont_apply_mipmapping;
+          fill_brush.sub_image(m_image, m_image_offset, m_image_size, f, mf);
         }
 
-      if (current_fill_rule() < Painter::fill_rule_data_count)
+      if (current_fill_rule() < Painter::number_fill_rule)
         {
-          fill_rule_function = CustomFillRuleFunction(static_cast<Painter::fill_rule_t>(current_fill_rule()));
+          fill_rule_function = CustomFillRuleFunction(static_cast<enum Painter::fill_rule_t>(current_fill_rule()));
         }
       else if (current_fill_rule() != current_end_fill_rule())
         {
           int value;
           c_array<const int> wnd;
 
-          wnd = path().tessellation()->filled()->subset(0).winding_numbers();
-          value = wnd[current_fill_rule() - Painter::fill_rule_data_count];
+          wnd = path().tessellation().filled().root_subset().winding_numbers();
+          value = wnd[current_fill_rule() - Painter::number_fill_rule];
           value_fill_rule = WindingValueFillRule(value);
           fill_rule = &value_fill_rule;
         }
@@ -1837,20 +2301,24 @@ draw_scene(bool drawing_wire_frame)
           D = PainterData(&fill_brush);
         }
 
-      if (m_fill_by_clipping)
+      if (m_fill_by_mode == fill_by_clipping)
         {
-          vec2 a, b;
+          Rect R;
 
-          path().approximate_bounding_box(&a, &b);
+          path().approximate_bounding_box(&R);
           m_painter->save();
           m_painter->clip_in_path(path(), *fill_rule);
-          m_painter->fill_rect(D, Rect().min_point(a).max_point(b));
+          m_painter->fill_rect(D, R);
           m_painter->restore();
         }
-      else
+      else if (m_fill_by_mode == fill_by_filled_path)
         {
-          m_painter->fill_path(D, path(), *fill_rule,
-                               m_shader_anti_alias_mode_values[m_aa_fill_mode]);
+          m_painter->fill_path(D, path(), *fill_rule, m_aa_fill_mode);
+        }
+      else if(current_fill_rule() < Painter::number_fill_rule)
+        {
+          m_painter->fill_path(D, path().shader_filled_path(),
+                               static_cast<enum Painter::fill_rule_t>(current_fill_rule()));
         }
     }
 
@@ -1860,41 +2328,41 @@ draw_scene(bool drawing_wire_frame)
 
       inv_scale = 1.0f / zoomer().transformation().scale();
       r = 15.0f * inv_scale;
-      if (!m_blue_pen)
+      if (!m_blue_pen.packed())
         {
-          FASTUIDRAWassert(!m_red_pen);
-          FASTUIDRAWassert(!m_green_pen);
-          m_blue_pen = m_painter->packed_value_pool().create_packed_value(PainterBrush().pen(0.0, 0.0, 1.0, 1.0));
-          m_red_pen = m_painter->packed_value_pool().create_packed_value(PainterBrush().pen(1.0, 0.0, 0.0, 1.0));
-          m_green_pen = m_painter->packed_value_pool().create_packed_value(PainterBrush().pen(0.0, 1.0, 0.0, 1.0));
+          FASTUIDRAWassert(!m_red_pen.packed());
+          FASTUIDRAWassert(!m_green_pen.packed());
+          m_blue_pen = m_painter->packed_value_pool().create_packed_brush(PainterBrush().color(0.0, 0.0, 1.0, 1.0));
+          m_red_pen = m_painter->packed_value_pool().create_packed_brush(PainterBrush().color(1.0, 0.0, 0.0, 1.0));
+          m_green_pen = m_painter->packed_value_pool().create_packed_brush(PainterBrush().color(0.0, 1.0, 0.0, 1.0));
         }
 
-      for (const vec2 &pt : m_paths[m_selected_path].m_pts)
+      for (const vec2 &pt : m_paths[m_selected_path]->m_pts)
         {
           fill_centered_rect(pt, r, PainterData(m_blue_pen));
         }
 
-      for (const vec2 &pt : m_paths[m_selected_path].m_ctl_pts)
+      for (const vec2 &pt : m_paths[m_selected_path]->m_ctl_pts)
         {
           fill_centered_rect(pt, r, PainterData(m_red_pen));
         }
 
-      for (const vec2 &pt : m_paths[m_selected_path].m_arc_center_pts)
+      for (const vec2 &pt : m_paths[m_selected_path]->m_arc_center_pts)
         {
           fill_centered_rect(pt, r, PainterData(m_green_pen));
         }
     }
 
-  if (!m_stroke_pen)
+  if (!m_stroke_pen.packed())
     {
       PainterBrush br;
-      br.pen(m_stroke_red.value(), m_stroke_green.value(), m_stroke_blue.value(), m_stroke_alpha.value());
-      m_stroke_pen = m_painter->packed_value_pool().create_packed_value(br);
+      br.color(m_stroke_red.value(), m_stroke_green.value(), m_stroke_blue.value(), m_stroke_alpha.value());
+      m_stroke_pen = m_painter->packed_value_pool().create_packed_brush(br);
     }
 
   if (m_stroke_width > 0.0f)
     {
-      PainterPackedValue<PainterBrush> *stroke_pen;
+      PainterData::brush_value *stroke_pen;
       stroke_pen = (!drawing_wire_frame) ? &m_stroke_pen : &m_draw_line_pen;
 
       if (m_draw_fill == draw_fill_path_occludes_stroking)
@@ -1903,61 +2371,83 @@ draw_scene(bool drawing_wire_frame)
           m_painter->clip_out_path(path(), *fill_rule);
         }
 
-      if (is_dashed_stroking())
+      if (is_dashed_stroking() && !m_use_path_effect)
         {
-          PainterDashedStrokeParams st;
-          if (m_have_miter_limit)
-            {
-              st.miter_limit(m_miter_limit);
-            }
-          else
-            {
-              st.miter_limit(-1.0f);
-            }
-          st.width(m_stroke_width);
+          ExampleItemData<PainterDashedStrokeParams> st;
+
+          st.m_stroke_params.miter_limit(m_miter_limit);
+          st.m_stroke_params.width(m_stroke_width);
 
           unsigned int D(dash_pattern());
           c_array<const PainterDashedStrokeParams::DashPatternElement> dash_ptr(&m_dash_patterns[D][0],
                                                                                 m_dash_patterns[D].size());
-          st.dash_pattern(dash_ptr);
+          st.m_stroke_params.dash_pattern(dash_ptr);
           if (m_stroke_width_in_pixels)
             {
-              st.stroking_units(PainterStrokeParams::pixel_stroking_units);
+              st.m_stroke_params.stroking_units(PainterStrokeParams::pixel_stroking_units);
             }
 
-          m_painter->stroke_dashed_path(PainterData(*stroke_pen, &st),
-                                        path(),
-                                        StrokingStyle()
-                                        .join_style(static_cast<enum Painter::join_style>(m_join_style))
-                                        .cap_style(static_cast<enum Painter::cap_style>(m_cap_style)),
-                                        m_shader_anti_alias_mode_values[m_aa_stroke_mode],
-                                        m_stroke_mode_values[m_stroking_mode]);
+          if (m_use_shader_effect)
+            {
+              fill_way_effect(st.m_wavy_effect);
+              m_painter->stroke_dashed_path(m_dashed_stroke_shader,
+                                            PainterData(*stroke_pen, &st),
+                                            path(),
+                                            StrokingStyle()
+                                            .join_style(m_join_style)
+                                            .cap_style(m_cap_style),
+                                            m_aa_stroke_mode, m_stroking_mode);
+            }
+          else
+            {
+              m_painter->stroke_dashed_path(PainterData(*stroke_pen, &st.m_stroke_params),
+                                            path(),
+                                            StrokingStyle()
+                                            .join_style(m_join_style)
+                                            .cap_style(m_cap_style),
+                                            m_aa_stroke_mode, m_stroking_mode);
+            }
 
         }
       else
         {
-          PainterStrokeParams st;
-          if (m_have_miter_limit)
+          PathDashEffect *effect(nullptr);
+          ExampleItemData<PainterStrokeParams> st;
+
+          if (m_use_path_effect)
             {
-              st.miter_limit(m_miter_limit);
+              effect = &m_current_effect;
+            }
+
+          st.m_stroke_params.miter_limit(m_miter_limit);
+          st.m_stroke_params.width(m_stroke_width);
+          if (m_stroke_width_in_pixels)
+            {
+              st.m_stroke_params.stroking_units(PainterStrokeParams::pixel_stroking_units);
+            }
+
+          if (m_use_shader_effect)
+            {
+              fill_way_effect(st.m_wavy_effect);
+              m_painter->stroke_path(m_stroke_shader,
+                                     PainterData(*stroke_pen, &st),
+                                     path(),
+                                     StrokingStyle()
+                                     .join_style(m_join_style)
+                                     .cap_style(m_cap_style),
+                                     m_aa_stroke_mode, m_stroking_mode,
+                                     effect);
             }
           else
             {
-              st.miter_limit(-1.0f);
+              m_painter->stroke_path(PainterData(*stroke_pen, &st.m_stroke_params),
+                                     path(),
+                                     StrokingStyle()
+                                     .join_style(m_join_style)
+                                     .cap_style(m_cap_style),
+                                     m_aa_stroke_mode, m_stroking_mode,
+                                     effect);
             }
-          st.width(m_stroke_width);
-          if (m_stroke_width_in_pixels)
-            {
-              st.stroking_units(PainterStrokeParams::pixel_stroking_units);
-            }
-
-          m_painter->stroke_path(PainterData(*stroke_pen, &st),
-                                 path(),
-                                 StrokingStyle()
-                                 .join_style(static_cast<enum Painter::join_style>(m_join_style))
-                                 .cap_style(static_cast<enum Painter::cap_style>(m_cap_style)),
-                                 m_shader_anti_alias_mode_values[m_aa_stroke_mode],
-                                 m_stroke_mode_values[m_stroking_mode]);
         }
 
       if (m_draw_fill == draw_fill_path_occludes_stroking)
@@ -1970,32 +2460,37 @@ draw_scene(bool drawing_wire_frame)
     {
       float r0, r1;
       vec2 p0, p1;
-      float inv_scale;
 
-      inv_scale = 1.0f / zoomer().transformation().scale();
-      r0 = 15.0f * inv_scale;
-      r1 = 30.0f * inv_scale;
+      r0 = 15.0f;
+      r1 = 30.0f;
 
       p0 = gradient_p0();
       p1 = gradient_p1();
 
-      if (translate_brush())
-        {
-          p0 -= zoomer().transformation().translation();
-          p1 -= zoomer().transformation().translation();
-        }
-
       if (matrix_brush())
         {
-          p0 *= inv_scale;
-          p1 *= inv_scale;
+          /* p0, p1 are suppose to be in screen coordinates,
+           * avoid the drama of unapplying coordinates and just
+           * change coordinate system temporarily to pixel
+           * coordinates
+           */
+          m_painter->save();
+          m_painter->transformation(m_pixel_matrix);
+        }
+      else
+        {
+          float inv_scale;
+
+          inv_scale = 1.0f / zoomer().transformation().scale();
+          r0 *= inv_scale;
+          r1 *= inv_scale;
         }
 
-      if (!m_black_pen)
+      if (!m_black_pen.packed())
         {
-          FASTUIDRAWassert(!m_white_pen);
-          m_white_pen = m_painter->packed_value_pool().create_packed_value(PainterBrush().pen(1.0, 1.0, 1.0, 1.0));
-          m_black_pen = m_painter->packed_value_pool().create_packed_value(PainterBrush().pen(0.0, 0.0, 0.0, 1.0));
+          FASTUIDRAWassert(!m_white_pen.packed());
+          m_white_pen = m_painter->packed_value_pool().create_packed_brush(PainterBrush().color(1.0, 1.0, 1.0, 1.0));
+          m_black_pen = m_painter->packed_value_pool().create_packed_brush(PainterBrush().color(0.0, 0.0, 0.0, 1.0));
         }
 
       fill_centered_rect(p0, r1, PainterData(m_black_pen));
@@ -2003,7 +2498,13 @@ draw_scene(bool drawing_wire_frame)
 
       fill_centered_rect(p1, r1, PainterData(m_white_pen));
       fill_centered_rect(p1, r0, PainterData(m_black_pen));
+
+      if (matrix_brush())
+        {
+          m_painter->restore();
+        }
     }
+  m_painter->restore();
 }
 
 void
@@ -2012,7 +2513,7 @@ draw_frame(void)
 {
   ivec2 wh(dimensions());
   float us;
-  PainterBackend::Surface::Viewport vwp;
+  PainterSurface::Viewport vwp;
 
   us = static_cast<float>(m_fps_timer.restart_us());
 
@@ -2053,15 +2554,17 @@ draw_frame(void)
       st.width(2.0f);
 
       PainterBrush stroke_pen;
-      stroke_pen.pen(1.0f, 1.0f, 1.0f, 1.0f);
+      stroke_pen.color(1.0f, 1.0f, 1.0f, 1.0f);
 
       m_painter->stroke_path(PainterData(&stroke_pen, &st),
                              m_grid_path,
                              StrokingStyle()
                              .cap_style(Painter::flat_caps)
                              .join_style(Painter::no_joins),
-                             Painter::shader_anti_alias_none);
+                             false);
     }
+
+  m_pixel_matrix = m_painter->transformation();
 
   /* apply zoomer() */
   m_painter->concat(zoomer().transformation().matrix3());
@@ -2070,7 +2573,7 @@ draw_frame(void)
   m_painter->shear(shear().x(), shear().y());
 
   /* apply rotation */
-  m_painter->rotate(angle() * M_PI / 180.0f);
+  m_painter->rotate(angle() * FASTUIDRAW_PI / 180.0f);
 
   /* apply shear2 */
   m_painter->shear(shear2().x(), shear2().y());
@@ -2107,12 +2610,12 @@ draw_frame(void)
         }
 
       ostr << "\nms = " << us / 1000.0f
-           << "\nDrawing Path: " << m_paths[m_selected_path].m_label;
+           << "\nDrawing Path: " << m_paths[m_selected_path]->m_label;
 
       if (m_stroke_width > 0.0f)
         {
-          ostr << "\n\t[a]AA-Stroking mode:" << m_anti_alias_mode_labels[m_aa_stroke_mode]
-	       << "\n\t[v]Stroke by: " <<  m_stroke_mode_labels[m_stroking_mode]
+          ostr << "\n\t[a]AA-Stroking mode:" << on_off(m_aa_stroke_mode)
+               << "\n\t[v]Stroke by: " << m_stroking_mode
                << "\n\tStroke Width: " << m_stroke_width;
           if (m_stroke_width_in_pixels)
             {
@@ -2131,47 +2634,61 @@ draw_frame(void)
               ostr << "([d]non-dashed)";
             }
 
-          ostr << "\n\t[c]CapStyle: " << m_cap_labels[m_cap_style]
-               << "\n\t[j]JoinStyle: " << m_join_labels[m_join_style];
+          ostr << "\n\t[c]CapStyle: " << Painter::label(m_cap_style)
+               << "\n\t[j]JoinStyle: " << Painter::label(m_join_style);
         }
 
       if (m_draw_fill != dont_draw_fill_path)
         {
-          ostr << "\n\t[u]AA-Filling mode: " << m_anti_alias_mode_labels[m_aa_fill_mode]
-               << "\n\t[f]Fill Mode: " << m_draw_fill_labels[m_draw_fill];
-          if (m_fill_by_clipping)
+          bool print_fill_stats(true);
+
+          if (m_fill_by_mode == fill_by_shader_filled_path)
             {
-              ostr << "(via clipping)";
+              if (current_fill_rule() >= Painter::number_fill_rule)
+                {
+                  print_fill_stats = false;
+                  ostr << "\n\nUnable to fill by " << m_fill_by_mode_labels[m_fill_by_mode]
+                       << "\nbecause ShaderFilledPath\nonly supports the standard fill modes\n";
+                }
             }
-          ostr << "\n\t[r]Fill Rule: ";
-          if (current_fill_rule() < Painter::fill_rule_data_count)
+
+          if (print_fill_stats)
             {
-              ostr << m_fill_labels[current_fill_rule()];
-            }
-          else if (current_fill_rule() == current_end_fill_rule())
-            {
-              ostr << "Custom (All Windings Filled)";
-            }
-          else
-            {
-              c_array<const int> wnd;
-              int value;
-              wnd = path().tessellation()->filled()->subset(0).winding_numbers();
-              value = wnd[current_fill_rule() - Painter::fill_rule_data_count];
-              ostr << "Custom (Winding == " << value << ")";
+              if (m_fill_by_mode == fill_by_filled_path)
+                {
+                  ostr << "\n\t[u]AA-Filling mode: " << on_off(m_aa_fill_mode);
+                }
+
+              ostr << "\n\t[f]Fill Mode: " << m_draw_fill_labels[m_draw_fill]
+                   << "(via " << m_fill_by_mode_labels[m_fill_by_mode] << ")"
+                   << "\n\t[r]Fill Rule: ";
+              if (current_fill_rule() < Painter::number_fill_rule)
+                {
+                  ostr << Painter::label(static_cast<enum Painter::fill_rule_t>(current_fill_rule()));
+                }
+              else if (current_fill_rule() == current_end_fill_rule())
+                {
+                  ostr << "Custom (All Windings Filled)";
+                }
+              else
+                {
+                  c_array<const int> wnd;
+                  int value;
+                  wnd = path().tessellation().filled().root_subset().winding_numbers();
+                  value = wnd[current_fill_rule() - Painter::number_fill_rule];
+                  ostr << "Custom (Winding == " << value << ")";
+                }
             }
         }
+      c_array<const unsigned int> stats(painter_stats());
+      for (unsigned int i = 0; i < stats.size(); ++i)
+        {
+          enum Painter::query_stats_t st;
 
-      ostr << "\nAttribs: "
-           << m_painter->query_stat(PainterPacker::num_attributes)
-           << "\nIndices: "
-           << m_painter->query_stat(PainterPacker::num_indices)
-           << "\nGenericData: "
-           << m_painter->query_stat(PainterPacker::num_generic_datas)
-           << "\nNumber Draws: "
-           << m_painter->query_stat(PainterPacker::num_draws)
-           << "\nPainter Z: " << m_painter->current_z()
-           << "\nMouse position:"
+          st = static_cast<enum Painter::query_stats_t>(i);
+          ostr << "\n" << Painter::label(st) << ": " << stats[i];
+        }
+      ostr << "\nMouse position:"
            << item_coordinates(mouse_position)
            << "\ncurve_flatness: " << m_curve_flatness
            << "\nView:\n\tzoom = " << zoomer().transformation().scale()
@@ -2179,14 +2696,49 @@ draw_frame(void)
            << "\n";
 
       PainterBrush brush;
-      brush.pen(0.0f, 1.0f, 1.0f, 1.0f);
-      draw_text(ostr.str(), 32.0f, m_font, PainterData(&brush));
+      brush.color(0.0f, 1.0f, 1.0f, 1.0f);
+      draw_text(ostr.str(), 32.0f, m_font.get(), PainterData(&brush));
     }
 
-  m_painter->end();
+  c_array<const PainterSurface* const> surfaces;
+
+  surfaces = m_painter->end();
   fastuidraw_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
   fastuidraw_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-  m_surface->blit_surface(GL_NEAREST);
+
+  m_show_surface = t_min(m_show_surface, (int)surfaces.size());
+  if (m_show_surface <= 0 || m_show_surface > surfaces.size())
+    {
+      m_surface->blit_surface(GL_NEAREST);
+    }
+  else
+    {
+      const gl::PainterSurfaceGL *S;
+      PainterSurface::Viewport src, dest;
+
+      src = m_surface->viewport();
+      S = dynamic_cast<const gl::PainterSurfaceGL*>(surfaces[m_show_surface - 1]);
+
+      dest.m_origin = src.m_origin;
+      dest.m_dimensions = ivec2(src.m_dimensions.x(), src.m_dimensions.y() / 2);
+      m_surface->blit_surface(src, dest, GL_LINEAR);
+
+      dest.m_origin.y() +=  dest.m_dimensions.y();
+      S->blit_surface(src, dest, GL_LINEAR);
+    }
+
+  if (m_last_shown_surface != m_show_surface)
+    {
+      if (m_show_surface > 0)
+        {
+          std::cout << "Show offscreen surface: " << m_show_surface - 1 << "\n";
+        }
+      else
+        {
+          std::cout << "Don't show offscreen surface\n";
+        }
+      m_last_shown_surface = m_show_surface;
+    }
 }
 
 void
@@ -2222,17 +2774,16 @@ derived_init(int w, int h)
         {
           if (m_use_atlas.value())
             {
-              m_image = Image::create(m_painter->image_atlas(),
-                                      image_data.width(), image_data.height(),
-                                      image_data, m_image_slack.value());
+              m_image = m_painter->image_atlas().create(image_data.width(),
+                                                        image_data.height(),
+                                                        image_data,
+                                                        Image::on_atlas);
             }
           else
             {
-              m_image = create_texture_image(m_painter->image_atlas(),
-                                             image_data.width(),
-                                             image_data.height(),
-                                             image_data.num_mipmap_levels(),
-                                             image_data);
+              m_image = m_painter->image_atlas().create_non_atlas(image_data.width(),
+                                                                  image_data.height(),
+                                                                  image_data);
             }
         }
     }
@@ -2255,6 +2806,15 @@ derived_init(int w, int h)
   m_curve_flatness = m_painter->curve_flatness();
   m_draw_timer.restart();
   m_fps_timer.restart();
+
+  CustomShaderGenerator<glsl::PainterItemShaderGLSL> item_shaders;
+  CustomShaderGenerator<glsl::PainterItemCoverageShaderGLSL> cvg_shaders;
+  m_stroke_shader = generate_stroke_shader(m_backend->default_shaders().stroke_shader(),
+                                           item_shaders, cvg_shaders);
+  m_dashed_stroke_shader = generate_dashed_stroke_shader(m_backend->default_shaders().dashed_stroke_shader(),
+                                                         item_shaders, cvg_shaders);
+  m_backend->register_shader(m_stroke_shader);
+  m_backend->register_shader(m_dashed_stroke_shader);
 }
 
 int

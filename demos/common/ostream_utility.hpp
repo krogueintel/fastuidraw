@@ -13,13 +13,14 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
 
-#pragma once
+#ifndef FASTUIDRAW_DEMO_OSTREAM_UTILITY_HPP
+#define FASTUIDRAW_DEMO_OSTREAM_UTILITY_HPP
 
 
 #include <iostream>
@@ -379,3 +380,5 @@ operator<<(std::ostream &str, const fastuidraw::matrixNxM<N, M, T> &matrix)
 
 
 /*! @} */
+
+#endif

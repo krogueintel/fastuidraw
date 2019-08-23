@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FASTUIDRAW_DEMO_PAINTERWIDGET_HPP
+#define FASTUIDRAW_DEMO_PAINTERWIDGET_HPP
 
 #include <list>
 #include <fastuidraw/util/reference_counted.hpp>
@@ -47,6 +48,10 @@ public:
    */
   bool m_clipped;
 
+  /* if true, draw the PainterWidget as transparent
+   */
+  bool m_draw_transparent;
+
   /* if true, skip drawing both the widgets
      and alls its descendants
    */
@@ -70,3 +75,5 @@ private:
   std::list<PainterWidget*>::iterator m_iterator_loc;
   std::list<PainterWidget*> m_children;
 };
+
+#endif

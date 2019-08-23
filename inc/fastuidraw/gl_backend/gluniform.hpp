@@ -13,12 +13,13 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_GLUNIFORM_HPP
+#define FASTUIDRAW_GLUNIFORM_HPP
 
 #include <fastuidraw/gl_backend/gl_header.hpp>
 #include <fastuidraw/util/vecN.hpp>
@@ -327,3 +328,5 @@ ProgramUniform(GLuint program, int location, c_array<const T> v)
 
 } //namespace gl
 } //namespace fastuidraw
+
+#endif

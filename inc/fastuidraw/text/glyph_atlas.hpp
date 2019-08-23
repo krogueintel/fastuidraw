@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_GLYPH_ATLAS_HPP
+#define FASTUIDRAW_GLYPH_ATLAS_HPP
 
 #include <fastuidraw/util/reference_counted.hpp>
 #include <fastuidraw/util/util.hpp>
@@ -26,36 +27,28 @@
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup PainterBackend
  * @{
  */
   /*!
    * \brief
    * GlyphAtlasStoreBase represents an interface to an aray of
-   * generic_data values.
+   * uint32_t values.
    *
    * An example implementation in GL would be a buffer object that backs
    * a single usamplerBuffer. An implementation of the class does NOT need to be
-   * thread safe because the ultimate user of the backing store
-   * (GlyphCache) performs calls to the backing store behind its own mutex.
+   * thread safe because the user of the backing store, \ref GlyphAtlas performs
+   * calls to the backing store behind its own mutex.
    */
   class GlyphAtlasBackingStoreBase:
-    public reference_counted<GlyphAtlasBackingStoreBase>::default_base
+    public reference_counted<GlyphAtlasBackingStoreBase>::concurrent
   {
   public:
-    /*!
-     * Ctor.
-     * \param psize number of generic_data elements that the
-                    GlyphAtlasBackingStoreBase backs
-     * \param presizable if true the object can be resized to be larger
-     */
-    GlyphAtlasBackingStoreBase(unsigned int psize, bool presizable);
-
     virtual
     ~GlyphAtlasBackingStoreBase();
 
     /*!
-     * Returns the number of \ref generic_data backed by the store.
+     * Returns the number of uint32_t backed by the store.
      */
     unsigned int
     size(void);
@@ -68,7 +61,7 @@ namespace fastuidraw
      */
     virtual
     void
-    set_values(unsigned int location, c_array<const generic_data> pdata) = 0;
+    set_values(unsigned int location, c_array<const uint32_t> pdata) = 0;
 
     /*!
      * To be implemented by a derived class to flush contents
@@ -79,27 +72,26 @@ namespace fastuidraw
     flush(void) = 0;
 
     /*!
-     * Returns true if and only if this object can be
-     * resized to a larger size.
-     */
-    bool
-    resizeable(void) const;
-
-    /*!
-     * Resize the object to a larger size. The routine resizeable()
-     * must return true, if not the function FASTUIDRAWasserts.
-     * \param new_size new number of \ref generic_data for the store to back
+     * Resize the object to a larger size.
+     * \param new_size new number of uint32_t for the store to back
      */
     void
     resize(unsigned int new_size);
 
   protected:
+    /*!
+     * Ctor.
+     * \param psize number of uint32_t elements that the
+                    GlyphAtlasBackingStoreBase backs
+     */
+    explicit
+    GlyphAtlasBackingStoreBase(unsigned int psize);
 
     /*!
      * To be implemented by a derived class to resize the
      * object. When called, the return value of size() is
      * the size before the resize completes.
-     * \param new_size new number of \ref generic_data for the store to back
+     * \param new_size new number of int32_t for the store to back
      */
     virtual
     void
@@ -113,11 +105,11 @@ namespace fastuidraw
    * \brief
    * A GlyphAtlas is a common location to place glyph data of
    * an application. Ideally, all glyph data is placed into a
-   * single GlyphAtlas. Methods of GlyphAtlas are thread
-   * safe, locked behind a mutex of the GlyphAtlas.
+   * single GlyphAtlas. Methods of GlyphAtlas are thread safe,
+   * protected behind atomics and a mutex within the GlyphAtlas.
    */
   class GlyphAtlas:
-    public reference_counted<GlyphAtlas>::default_base
+    public reference_counted<GlyphAtlas>::concurrent
   {
   public:
     /*!
@@ -134,10 +126,10 @@ namespace fastuidraw
      * Negative return value indicates failure.
      */
     int
-    allocate_data(c_array<const generic_data> pdata);
+    allocate_data(c_array<const uint32_t> pdata);
 
     /*!
-     * Deallocate  data
+     * Deallocate data
      */
     void
     deallocate_data(int location, int count);
@@ -155,6 +147,12 @@ namespace fastuidraw
     clear(void);
 
     /*!
+     * Returns the number of times that clear() has been called.
+     */
+    unsigned int
+    number_times_cleared(void) const;
+
+    /*!
      * Calls GlyphAtlasBackingStoreBase::flush() on
      * the  backing store (see store()).
      */
@@ -162,13 +160,36 @@ namespace fastuidraw
     flush(void) const;
 
     /*!
-     * Returns the  store for this GlyphAtlas.
+     * Returns the store for this GlyphAtlas.
      */
-    reference_counted_ptr<const GlyphAtlasBackingStoreBase>
+    const reference_counted_ptr<const GlyphAtlasBackingStoreBase>&
     store(void) const;
+
+    /*!
+     * Increments an internal counter. If this internal
+     * counter is greater than zero, then clear() and
+     * deallocate_data() are -delayed- until the counter
+     * reaches zero again (see unlock_resources()). The
+     * use case is for buffered painting where the GPU
+     * calls are delayed for later (to batch commands)
+     * and a clear() or deallocate_data() was issued
+     * during painting.
+     */
+    void
+    lock_resources(void);
+
+    /*!
+     * Decrements an internal counter. If this internal
+     * counter reaches zero then any deallocate_data()
+     * and clear() calls are issued.
+     */
+    void
+    unlock_resources(void);
 
   private:
     void *m_d;
   };
 /*! @} */
 } //namespace fastuidraw
+
+#endif

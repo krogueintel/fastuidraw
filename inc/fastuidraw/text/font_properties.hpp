@@ -13,17 +13,18 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-#pragma once
+#ifndef FASTUIDRAW_FONT_PROPERTIES_HPP
+#define FASTUIDRAW_FONT_PROPERTIES_HPP
 
 #include <fastuidraw/util/util.hpp>
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
 
@@ -36,7 +37,6 @@ namespace fastuidraw
   class FontProperties
   {
   public:
-
     /*!
      * Ctor. Initializes bold() as false,
      * italic() as false and all string values
@@ -187,3 +187,5 @@ namespace fastuidraw
   };
 /*! @} */
 }
+
+#endif

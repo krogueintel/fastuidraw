@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_STATIC_RESOURCE_HPP
+#define FASTUIDRAW_STATIC_RESOURCE_HPP
 
 #include <fastuidraw/util/c_array.hpp>
 
@@ -35,6 +36,18 @@ namespace fastuidraw
    */
   void
   generate_static_resource(c_string resource_label, c_array<const uint8_t> value);
+
+  /*!
+   * Generate and store a resource for use. Once a resource is added it
+   * cannot be removed.
+   * \param resource_label "name" of resource, the string is copied
+   * \param value "value" of resource, the data behind value is copied,
+   *               the value is though of as a string and thus must be
+   *               null-terminated. The created resource includes the
+   *               end-of-string marker.
+   */
+  void
+  generate_static_resource(c_string resource_label, c_string value);
 
   /*!
    * Returns the data behind a resource. If no resource is found,
@@ -63,3 +76,5 @@ namespace fastuidraw
   };
 /*! @} */
 }
+
+#endif

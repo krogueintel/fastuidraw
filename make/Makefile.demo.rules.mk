@@ -1,8 +1,8 @@
 DEMO_COMMON_RESOURCE_STRING_SRCS = $(patsubst %.resource_string, string_resources_cpp/%.resource_string.cpp, $(COMMON_DEMO_RESOURCE_STRINGS))
 CLEAN_FILES += $(DEMO_COMMON_RESOURCE_STRING_SRCS)
 
-DEMO_COMMON_LIBS := $(shell sdl2-config --libs) -lSDL2_image
-DEMO_COMMON_CFLAGS = $(shell sdl2-config --cflags) -Idemos/common
+DEMO_COMMON_LIBS := $(shell pkg-config SDL2_image --libs)
+DEMO_COMMON_CFLAGS = $(shell pkg-config SDL2_image --cflags) -Idemos/common -Idemos/tutorial/common
 
 
 ifeq ($(MINGW_BUILD),1)
@@ -24,21 +24,12 @@ define demobuildrules
 $(eval DEMO_$(2)_CFLAGS_$(1) = $$(DEMO_$(2)_CFLAGS) $$(shell ./fastuidraw-config.nodir --$(1) --$(2) --cflags --incdir=inc)
 DEMO_$(2)_LIBS_$(1) = $$(shell ./fastuidraw-config.nodir --$(1) --$(2) --libs --libdir=.)
 DEMO_$(2)_LIBS_STATIC_$(1) = $$(shell ./fastuidraw-config.nodir --$(1) --$(2) --static --libs --libdir=.)
-ifeq ($(BUILD_NEGL),1)
-DEMO_COMMON_LIBS += -lEGL -lwayland-egl
-DEMO_$(2)_LIBS_$(1) += $$(shell ./fastuidraw-config.nodir --negl --$(2) --libs --libdir=.)
-DEMO_$(2)_LIBS_STATIC_$(1) = $$(shell ./fastuidraw-config.nodir --$(1) --$(2) --negl --static --libs --libdir=.)
-NEGL_$(2)_DEP_$(1) = $(NGL_EGL_HPP)
-NEGL_$(2)_LIB_DEP_$(1) = libNEGL_$(2).so
-else
-DEMO_$(2)_CFLAGS_$(1) += -DEGL_HELPER_DISABLED
-endif
 
 build/demo/$(2)/$(1)/%.resource_string.o: build/string_resources_cpp/%.resource_string.cpp fastuidraw-config.nodir
 	@mkdir -p $$(dir $$@)
 	$(CXX) $$(DEMO_$(2)_CFLAGS_$(1)) -c $$< -o $$@
 
-build/demo/$(2)/$(1)/%.o: %.cpp $$(NEGL_$(2)_DEP_$(1)) $$(NGL_$(1)_HPP) build/demo/$(2)/$(1)/%.d fastuidraw-config.nodir
+build/demo/$(2)/$(1)/%.o: %.cpp $$(NGL_$(1)_HPP) build/demo/$(2)/$(1)/%.d fastuidraw-config.nodir
 	@mkdir -p $$(dir $$@)
 	$(CXX) $$(DEMO_$(2)_CFLAGS_$(1)) -MT $$@ -MMD -MP -MF build/demo/$(2)/$(1)/$$*.d  -c $$< -o $$@
 
@@ -67,21 +58,7 @@ CLEAN_FILES += $(1)-$(2)-$(3) $(1)-$(2)-$(3).exe
 CLEAN_FILES += $(1)-$(2)-$(3)-static $(1)-$(2)-$(3)-static.exe
 SUPER_CLEAN_FILES += $$(THISDEMO_$(1)_$(2)_$(3)_DEPS)
 ifeq ($(4),1)
-ifneq ($(MAKECMDGOALS),clean)
-ifneq ($(MAKECMDGOALS),clean-all)
-ifneq ($(MAKECMDGOALS),targets)
-ifneq ($(MAKECMDGOALS),docs)
-ifneq ($(MAKECMDGOALS),clean-docs)
-ifneq ($(MAKECMDGOALS),install-docs)
-ifneq ($(MAKECMDGOALS),uninstall-docs)
 -include $$(THISDEMO_$(1)_$(2)_$(3)_DEPS)
-endif
-endif
-endif
-endif
-endif
-endif
-endif
 demos-$(2)-$(3): $(1)-$(2)-$(3)
 .PHONY: demos-$(2)-$(3)
 $(1)-$(2): $(1)-$(2)-$(3)
@@ -90,8 +67,9 @@ $(1)-$(3): $(1)-$(2)-$(3)
 .PHONY: $(1)-$(3)
 $(1): $(1)-$(2)
 .PHONY: $(1)
-$(1)-$(2)-$(3): libFastUIDraw$(2)_$(3) $$(NEGL_$(3)_LIB_DEP_$(2)) $$(THISDEMO_$(1)_$(2)_$(3)_ALL_OBJS)
+$(1)-$(2)-$(3): libFastUIDraw$(2)_$(3) $$(THISDEMO_$(1)_$(2)_$(3)_ALL_OBJS)
 	$$(CXX) -o $$@ $$(THISDEMO_$(1)_$(2)_$(3)_ALL_OBJS) $$(DEMO_$(3)_LIBS_$(2)) $(DEMO_COMMON_LIBS)
+DEMO_EXES += $(1)-$(2)-$(3)
 
 demos-$(2)-$(3)-static: $(1)-$(2)-$(3)-static
 .PHONY: demos-$(2)-$(3)-static
@@ -101,7 +79,7 @@ $(1)-$(3)-static: $(1)-$(2)-$(3)-static
 .PHONY: $(1)-$(3)-static
 $(1)-static: $(1)-$(2)-static
 .PHONY: $(1)-static
-$(1)-$(2)-$(3)-static: libFastUIDraw_$(3).a libFastUIDraw$(2)_$(3).a libN$(2)_$(3).a libNEGL_$(3).a $$(THISDEMO_$(1)_$(2)_$(3)_ALL_OBJS)
+$(1)-$(2)-$(3)-static: libFastUIDraw_$(3).a libFastUIDraw$(2)_$(3).a libN$(2)_$(3).a $$(THISDEMO_$(1)_$(2)_$(3)_ALL_OBJS)
 	$$(CXX) -o $$@ $$(THISDEMO_$(1)_$(2)_$(3)_ALL_OBJS) $(DEMO_COMMON_LIBS) $$(DEMO_$(3)_LIBS_STATIC_$(2))
 endif
 )

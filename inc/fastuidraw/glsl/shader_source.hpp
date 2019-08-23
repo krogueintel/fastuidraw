@@ -13,11 +13,12 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-#pragma once
+#ifndef FASTUIDRAW_SHADER_SOURCE_HPP
+#define FASTUIDRAW_SHADER_SOURCE_HPP
 
 #include <fastuidraw/util/util.hpp>
 #include <fastuidraw/util/vecN.hpp>
@@ -45,22 +46,21 @@ public:
   enum source_t
     {
       /*!
-       * Shader source code is taken
-       * from the file whose name
-       * is the passed string.
+       * Shader source code is taken from the file whose
+       * name is the passed string.
        */
       from_file,
 
       /*!
-       * The passed string is the
-       * shader source code.
+       * The passed string is the shader source code.
        */
       from_string,
 
       /*!
-       * The passed string is label
-       * for a string of text fetched
-       * with fastuidraw::fetch_static_resource()
+       * The passed string is label for a string of text
+       * fetched with fastuidraw::fetch_static_resource().
+       * The resource will be IGNORED if the last byte of
+       * resource is not 0 (which indicates end-of-string).
        */
       from_resource,
     };
@@ -202,6 +202,32 @@ public:
       return add_macro(macro_name, v);
     }
 
+    /*!
+     * Add a macro to this MacroSet for casted to int32_t
+     * \param macro_name name of macro
+     * \param macro_value value to which macro is given
+     */
+    template<typename T>
+    MacroSet&
+    add_macro_i32(c_string macro_name, T macro_value)
+    {
+      int32_t v(macro_value);
+      return add_macro(macro_name, v);
+    }
+
+    /*!
+     * Add a macro to this MacroSet for casted to float
+     * \param macro_name name of macro
+     * \param macro_value value to which macro is given
+     */
+    template<typename T>
+    MacroSet&
+    add_macro_float(c_string macro_name, T macro_value)
+    {
+      float v(macro_value);
+      return add_macro(macro_name, v);
+    }
+
   private:
     friend class ShaderSource;
     void *m_d;
@@ -331,6 +357,32 @@ public:
   }
 
   /*!
+   * Add a macro to this MacroSet for casted to int32_t
+   * \param macro_name name of macro
+   * \param macro_value value to which macro is given
+   */
+  template<typename T>
+  ShaderSource&
+  add_macro_i32(c_string macro_name, T macro_value)
+  {
+    int32_t v(macro_value);
+    return add_macro(macro_name, v);
+  }
+
+  /*!
+   * Add a macro to this MacroSet for casted to float
+   * \param macro_name name of macro
+   * \param macro_value value to which macro is given
+   */
+  template<typename T>
+  ShaderSource&
+  add_macro_float(c_string macro_name, T macro_value)
+  {
+    float v(macro_value);
+    return add_macro(macro_name, v);
+  }
+
+  /*!
    * Add macros of a MacroSet to this ShaderSource.
    * Functionally, will insert \#define macro_name macro_value
    * in the GLSL source code for each macro in the
@@ -385,22 +437,6 @@ public:
   specify_extensions(const ShaderSource &obj);
 
   /*!
-   * Set to disable adding pre-added FastUIDraw macros
-   * and functions to GLSL source code. The pre-added
-   * functions are:
-   *  - uint fastuidraw_mask(uint num_bits) : returns a uint where the last num_bits bits are up
-   *  - uint fastuidraw_extract_bits(uint bit0, uint num_bits, uint src) : extracts a value from the named bits of a uint
-   *  - void fastuidraw_do_nothing(void) : function that has empty body (i.e. does nothing).
-   *
-   * The added macros are:
-   *
-   *  - FASTUIDRAW_MASK(bit0, num_bits) : wrapper over fastuidraw_mask that casts arguments into uint's
-   *  - FASTUIDRAW_EXTRACT_BITS(bit0, num_bits, src) : wrapper over fastuidraw_extract_bits that casts arguments into uint's
-   */
-  ShaderSource&
-  disable_pre_added_source(void);
-
-  /*!
    * Returns the GLSL code assembled. The returned string is only
    * gauranteed to be valid up until the ShaderSource object
    * is modified.
@@ -418,3 +454,5 @@ private:
 
 } //namespace glsl
 } //namespace fastuidraw
+
+#endif

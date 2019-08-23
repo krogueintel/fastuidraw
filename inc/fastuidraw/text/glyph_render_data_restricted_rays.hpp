@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,19 +12,21 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_GLYPH_RENDER_DATA_RESTRICTED_RAYS_HPP
+#define FASTUIDRAW_GLYPH_RENDER_DATA_RESTRICTED_RAYS_HPP
 
+#include <fastuidraw/util/rect.hpp>
 #include <fastuidraw/text/glyph_render_data.hpp>
 #include <fastuidraw/painter/painter_enums.hpp>
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
 
@@ -67,64 +69,12 @@ namespace fastuidraw
      */
     enum hierarchy_packing_t
       {
-        /*!
-         * If this bit is up, indicates that the 32-bit value
-         * is holding node data. If the bit is down indicates
-         * that the element is a leaf and the value holds the
-         * properties of the curve list in the box and the next
-         * value holds the winding sample information for the
-         * box and are packed as according to \ref
-         * winding_sample_packing_t.
-         */
-        hierarchy_is_node_bit = 31u,
-
-        /*!
-         * For case where the element is a node, i.e. the
-         * bit \ref hierarchy_is_node_bit is up. This bit
-         * indicates if the split of the node is horizontal
-         * of verical. A value of 0 indicates that the split
-         * happens in the x-coordinate (i.e. the child nodes
-         * have the same values for min-y and max-y) and a
-         * value of 1 indicates the split happens in the
-         * y-coordinate.
-         */
-        hierarchy_splitting_coordinate_bit = 30u,
-
-        /*!
-         * For case where the element is a node, i.e. the
-         * bit \ref hierarchy_is_node_bit is up. This is
-         * the first bit holding the offset from the start
-         * of the geomertic data of the glyph for the child
-         * node which comes before the split, i.e. the child
-         * on the left or bottom side.
-         */
-        hierarchy_child0_offset_bit0 = 0u,
-
-        /*!
-         * For case where the element is a node, i.e. the
-         * bit \ref hierarchy_is_node_bit is up. This is
-         * the first bit holding the offset from the start
-         * of the geomertic data of the glyph for the child
-         * node which comes after the split, i.e. the child
-         * on the right or top side.
-         */
-        hierarchy_child1_offset_bit0 = 15u,
 
         /*!
          * This is the number of bits used to store the
          * offsets to a child node.
          */
         hierarchy_child_offset_numbits = 15u,
-
-        /*!
-         * For case where the element is leaf, i.e. the
-         * bit \ref hierarchy_is_node_bit is down. This
-         * is the first bit used to encode the offset
-         * to where the list of curves for the box is
-         * located. The list of curves is packed as
-         * according to \ref curve_list_packing_t.
-         */
-        hierarchy_leaf_curve_list_bit0 = 0u,
 
         /*!
          * For case where the element is leaf, i.e. the
@@ -139,22 +89,75 @@ namespace fastuidraw
         /*!
          * For case where the element is leaf, i.e. the
          * bit \ref hierarchy_is_node_bit is down. This
-         * is the first bit used to encode the size
-         * of the list of curves for the box is located.
-         * The list of curves is packed as according to
-         * \ref curve_list_packing_t.
-         */
-        hierarchy_leaf_curve_list_size_bit0 = 16u,
-
-        /*!
-         * For case where the element is leaf, i.e. the
-         * bit \ref hierarchy_is_node_bit is down. This
          * is the number of bits used to encode the size
          * of the list of curves for the box is located.
          * The list of curves is packed as according to
          * \ref curve_list_packing_t.
          */
         hierarchy_leaf_curve_list_size_numbits = 15u,
+
+        /*!
+         * If this bit is up, indicates that the 32-bit value
+         * is holding node data. If the bit is down indicates
+         * that the element is a leaf and the value holds the
+         * properties of the curve list in the box and the next
+         * value holds the winding sample information for the
+         * box and are packed as according to \ref
+         * winding_sample_packing_t.
+         */
+        hierarchy_is_node_bit = 0u,
+
+        /*!
+         * For case where the element is a node, i.e. the
+         * bit \ref hierarchy_is_node_bit is up. This bit
+         * indicates if the split of the node is horizontal
+         * of verical. A value of 0 indicates that the split
+         * happens in the x-coordinate (i.e. the child nodes
+         * have the same values for min-y and max-y) and a
+         * value of 1 indicates the split happens in the
+         * y-coordinate.
+         */
+        hierarchy_splitting_coordinate_bit = hierarchy_is_node_bit + 1u,
+
+        /*!
+         * For case where the element is a node, i.e. the
+         * bit \ref hierarchy_is_node_bit is up. This is
+         * the first bit holding the offset from the start
+         * of the geomertic data of the glyph for the child
+         * node which comes before the split, i.e. the child
+         * on the left or bottom side.
+         */
+        hierarchy_child0_offset_bit0 = hierarchy_splitting_coordinate_bit + 1u,
+
+        /*!
+         * For case where the element is a node, i.e. the
+         * bit \ref hierarchy_is_node_bit is up. This is
+         * the first bit holding the offset from the start
+         * of the geomertic data of the glyph for the child
+         * node which comes after the split, i.e. the child
+         * on the right or top side.
+         */
+        hierarchy_child1_offset_bit0 = hierarchy_child0_offset_bit0 + hierarchy_child_offset_numbits,
+
+        /*!
+         * For case where the element is leaf, i.e. the
+         * bit \ref hierarchy_is_node_bit is down. This
+         * is the first bit used to encode the offset
+         * to where the list of curves for the box is
+         * located. The list of curves is packed as
+         * according to \ref curve_list_packing_t.
+         */
+        hierarchy_leaf_curve_list_bit0 = hierarchy_is_node_bit + 1u,
+
+        /*!
+         * For case where the element is leaf, i.e. the
+         * bit \ref hierarchy_is_node_bit is down. This
+         * is the first bit used to encode the size
+         * of the list of curves for the box is located.
+         * The list of curves is packed as according to
+         * \ref curve_list_packing_t.
+         */
+        hierarchy_leaf_curve_list_size_bit0 = hierarchy_leaf_curve_list_bit0 + hierarchy_leaf_curve_list_numbits,
       };
 
     /*!
@@ -264,78 +267,97 @@ namespace fastuidraw
       };
 
     /*!
-     * This enumeration specifies how the points of a curve are packed.
-     * Each point is realized as a single 32-bit value. Both the
-     * x and y-coordinates are integer values coming from the outline
-     * of the glyph.
+     * Points are packed as (fp16, fp16) pairs.
      */
     enum point_packing_t
       {
-        /*!
-         * The number of bits to store a coordinate value
-         */
-        point_coordinate_numbits = 16u,
+      };
 
+    enum
+      {
         /*!
-         * The first bit used to store the x-coordinate of the point
+         * The glyph coordinate value in each coordiante varies
+         * from -\ref glyph_coord_value to +\ref glyph_coord_value,
+         * i.e. the glyph is drawn as rect with min-corner
+         * (-\ref glyph_coord_value, -\ref glyph_coord_value)
+         * and max-corner (+\ref glyph_coord_value, +\ref glyph_coord_value)
          */
-        point_x_coordinate_bit0 = 0u,
-
-        /*!
-         * The first bit used to store the y-coordinate of the point
-         */
-        point_y_coordinate_bit0 = 16u,
+        glyph_coord_value = 2048,
       };
 
     /*!
      * This enumeration describes the meaning of the
-     * attributes. The data of the glyph is offset so
-     * that a shader can assume that the bottom left
-     * corner has glyph-coordinate (0, 0) and the top
-     * right corner has glyph-coordinate (width, height)
-     * where width and height are the width and height
-     * of the glyph is glyph coordinates.
+     * attributes. The glyph shader is to assume that
+     * the glyph-coordinates at the min-corner is
+     * (-\ref glyph_coord_value, -\ref glyph_coord_value)
+     * and the glyph coordiantes at the max-corner is
+     * (+\ref glyph_coord_value, +\ref glyph_coord_value)
      */
     enum attribute_values_t
       {
         /*!
-         * the index into GlyphAttribute::m_data storing
-         * the x-value for the glyph coordinate of the vertex
-         * of a quad to draw a glyph.
+         * Value is 0 if on min-x side of glyph, value is
+         * 1 if on max-x side of glyph; packed as uint.
          */
-        glyph_coordinate_x = 0,
+        glyph_normalized_x,
+
+        /*!
+         * Value is 0 if on min-y side of glyph, value is
+         * 1 if on max-y side of glyph; packed as uint.
+         */
+        glyph_normalized_y,
 
         /*!
          * the index into GlyphAttribute::m_data storing
-         * the y-value for the glyph coordinate of the vertex
-         * of a quad to draw a glyph.
+         * the fill rule and the offset into the store for
+         * the glyph data. The offset is encoded as follows
+         *  - bits0-bits29 encode the offset
+         *  - bit30 indicates to complement fill
+         *  - bit31 up indicates odd-even fill rule and
+         *          down indicates non-zero fill rule.
          */
-        glyph_coordinate_y = 1,
-
-        /*!
-         * the index into GlyphAttribute::m_data storing
-         * the width of the glyph in glyph coordinates.
-         */
-        glyph_width = 2,
-
-        /*!
-         * the index into GlyphAttribute::m_data storing
-         * the height of the glyph in glyph coordinates.
-         */
-        glyph_height = 3,
-
-        /*!
-         * the index into GlyphAttribute::m_data storing
-         * the offset into the  store for the glyph
-         * data.
-         */
-        glyph_offset = 4,
+        glyph_offset,
 
         /*!
          * Number attribute values needed.
          */
-        glyph_num_attributes = 5
+        glyph_num_attributes
       };
+
+    /*!
+     * A query_info holds data about a \ref GlyphRenderDataRestrictedRays
+     * value (after its finalized method).
+     */
+    class query_info
+    {
+    public:
+      /*!
+       * Default ctor, initializing the value as empty
+       */
+      query_info(void)
+      {}
+
+      /*!
+       * Set the value of a \ref vecN of \ref GlyphAttribute values
+       * derived from this query_info object
+       * \param out_attribs location to which to write GlyphAttribute values
+       * \param fill_rule fill rule with which to fill the glyphs
+       * \param offset location of glyph data
+       */
+      void
+      set_glyph_attributes(vecN<GlyphAttribute, glyph_num_attributes> *out_attribs,
+                           enum PainterEnums::fill_rule_t fill_rule,
+                           uint32_t offset);
+
+      /*!
+       * The GPU data of the queried \ref GlyphRenderDataRestrictedRays
+       * object; the data pointed to by the array is backed
+       * internally by the queried \ref GlyphRenderDataRestrictedRays;
+       * thus, if the point becomes invalid once the queried
+       * \ref GlyphRenderDataRestrictedRays goes out of scope.
+       */
+      c_array<const uint32_t> m_gpu_data;
+    };
 
     /*!
      * Ctor.
@@ -352,7 +374,7 @@ namespace fastuidraw
      * \param pt start point of the new contour
      */
     void
-    move_to(ivec2 pt);
+    move_to(vec2 pt);
 
     /*!
      * Add a line segment connecting the end point of the
@@ -361,7 +383,7 @@ namespace fastuidraw
      * \param pt end point of the new line segment
      */
     void
-    line_to(ivec2 pt);
+    line_to(vec2 pt);
 
     /*!
      * Add a quadratic curveconnecting the end point of the
@@ -370,91 +392,71 @@ namespace fastuidraw
      * \param pt end point of the quadratic curve
      */
     void
-    quadratic_to(ivec2 ct, ivec2 pt);
+    quadratic_to(vec2 ct, vec2 pt);
 
     /*!
-     * Finalize the input data after which no more contours or curves
-     * may be added. All contours added must be closed as well.
+     * Finalize the input data after which no more contours or curves may be added;
+     * all added contours must be closed before calling finalize(). Once finalize()
+     * is called, no further data can be added. How the data is broken into bounding
+     * boxes is specified by
+     * - units_per_EM argument (see below)
+     * - GlyphGenerateParams::restricted_rays_minimum_render_size()
+     * - GlyphGenerateParams::restricted_rays_split_thresh()
+     * - GlyphGenerateParams::restricted_rays_max_recursion()
+     * All contours added must be closed as well.
      * \param f fill rule to use for rendering
-     * \param min_pt minimum point of the bounding box of the contours
-     *               added
-     * \param max_pt maximum point of the bounding box of the contours
-     *               added
-     * \param units_per_EM the units per EM for the glyph; this value
-     *                     together with expected_min_render_size() is
-     *                     used to decide how close a curve may be to
-     *                     a bounding box to decide if it is included.
+     * \param glyph_rect the rect of the glyph
+     * \param units_per_EM the units per EM for the glyph; this value together with
+     *                     GlyphGenerateParams::restricted_rays_minimum_render_size()
+     *                     is used to decide how close a curve may be to a bounding
+     *                     box to decide if it is included.
      */
     void
-    finalize(enum PainterEnums::fill_rule_t f,
-             ivec2 min_pt, ivec2 max_pt,
+    finalize(enum PainterEnums::fill_rule_t f, const Rect &glyph_rect,
              float units_per_EM);
+
+    /*!
+     * Finalize the input data after which no more contours or curves may be added;
+     * all added contours must be closed before calling finale(). Once finalize()
+     * is called, no further data can be added. Instead of using methods from
+     * \ref GlyphGenerateParams, directly specify how the data is broken into
+     * boxes.
+     * \param f fill rule to use for rendering
+     * \param glyph_rect the rect of the glyph
+     * \param split_thresh if the number of curves within a box is greater than
+     *                     this value, the box is split
+     * \param max_recursion the maximum level of recursion allowed in splitting
+     *                      the data into boxes
+     * \param near_thresh horizontal and vertical threshhold to decide if a curve
+     *                    outside of a box should be added to a box
+     */
+    void
+    finalize(enum PainterEnums::fill_rule_t f, const Rect &glyph_rect,
+             int split_thresh, int max_recursion, vec2 near_thresh);
+
+    /*!
+     * Query the data; may only be called after finalize(). Returns
+     * \ref routine_fail if finalize() has not yet been called.
+     * \param out_info location to which to write information about
+     *                 this object.
+     */
+    enum return_code
+    query(query_info *out_info) const;
+
+    virtual
+    c_array<const c_string>
+    render_info_labels(void) const;
 
     virtual
     enum fastuidraw::return_code
     upload_to_atlas(GlyphAtlasProxy &atlas_proxy,
-                    GlyphAttribute::Array &attributes) const;
-
-    /*!
-     * Returns the maximum level of recursion that will be
-     * used to generate the hierarchy of boxes holding the
-     * curves on the next \ref GlyphRenderDataRestrictedRays
-     * object whose finalize() method is called.
-     */
-    static
-    unsigned int
-    max_recursion(void);
-
-    /*!
-     * Set the value returned by max_recursion(). Default
-     * value is 12.
-     */
-    static
-    void
-    max_recursion(unsigned int);
-
-    /*!
-     * Returns the threshhold value for number of curves
-     * allowed in a single box before a box is split on
-     * the next \ref GlyphRenderDataRestrictedRays object
-     * whose finalize() method is called.
-     */
-    static
-    unsigned int
-    split_thresh(void);
-
-    /*!
-     * Set the value returned by split_thresh(). Default
-     * value is 4.
-     */
-    static
-    void
-    split_thresh(unsigned int);
-
-    /*!
-     * Specifies the expected minimum size at which to render
-     * glyphs via  a \ref GlyphRenderDataRestrictedRays. Takes
-     * effect on the next \ref GlyphRenderDataRestrictedRays
-     * whose finalize() method is called. The value is used
-     * to include curves near the boundary of bounding box
-     * so that anti-aliasing works correctly when the glyph
-     * is renderer very small. A negative value indicates that
-     * no slack is taken/used.
-     */
-    static
-    float
-    expected_min_render_size(void);
-
-    /*!
-     * Set the value returned by split_thresh(). Default
-     * value is 32.0.
-     */
-    static
-    void
-    expected_min_render_size(float);
+                    GlyphAttribute::Array &attributes,
+                    c_array<float> render_costs) const;
 
   private:
     void *m_d;
   };
 /*! @} */
 }
+
+#endif

@@ -5,13 +5,9 @@ d		:= $(dir)
 # End standard header
 
 FASTUIDRAW_SOURCES += $(call filelist, image.cpp colorstop.cpp \
-	colorstop_atlas.cpp path.cpp tessellated_path.cpp)
-
-dir := $(d)/ngl_generator
-include $(dir)/Rules.mk
-
-dir := $(d)/ngl
-include $(dir)/Rules.mk
+	colorstop_atlas.cpp path.cpp tessellated_path.cpp \
+	partitioned_tessellated_path.cpp path_effect.cpp \
+	path_dash_effect.cpp)
 
 dir := $(d)/util
 include $(dir)/Rules.mk
@@ -22,7 +18,7 @@ include $(dir)/Rules.mk
 dir := $(d)/painter
 include $(dir)/Rules.mk
 
-dir := $(d)/private
+dir := $(d)/internal
 include $(dir)/Rules.mk
 
 dir := $(d)/glsl
@@ -30,8 +26,6 @@ include $(dir)/Rules.mk
 
 dir := $(d)/gl_backend
 include $(dir)/Rules.mk
-
-NEGL_SRCS += $(call filelist, egl_binding.cpp)
 
 # Begin standard footer
 d		:= $(dirstack_$(sp))

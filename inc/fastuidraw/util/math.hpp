@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_MATH_HPP
+#define FASTUIDRAW_MATH_HPP
 
 #include <math.h>
 #include <stdlib.h>
@@ -27,6 +28,11 @@ namespace fastuidraw
 /*!\addtogroup Utility
  * @{
  */
+
+/*!\def FASTUIDRAW_PI
+ * Macro giving the value of pi as a float
+ */
+#define FASTUIDRAW_PI 3.14159265358979323846f
 
   /*!
    * Conveniance overload avoiding to rely on std::
@@ -74,6 +80,13 @@ namespace fastuidraw
   inline
   float
   t_cos(float x) { return ::cosf(x); }
+
+  /*!
+   * Conveniance overload avoiding to rely on std::
+   */
+  inline
+  float
+  t_tan(float x) { return ::tanf(x); }
 
   /*!
    * Conveniance overload avoiding to rely on std::
@@ -129,6 +142,13 @@ namespace fastuidraw
    */
   inline
   double
+  t_tan(double x) { return ::tan(x); }
+
+  /*!
+   * Conveniance overload avoiding to rely on std::
+   */
+  inline
+  double
   t_sqrt(double x) { return ::sqrt(x); }
 
   /*!
@@ -172,6 +192,13 @@ namespace fastuidraw
   inline
   long double
   t_cos(long double x) { return ::cosl(x); }
+
+  /*!
+   * Conveniance overload avoiding to rely on std::
+   */
+  inline
+  long double
+  t_tan(long double x) { return ::tanl(x); }
 
   /*!
    * Conveniance overload avoiding to rely on std::
@@ -252,3 +279,5 @@ namespace fastuidraw
 
 /*! @} */
 }
+
+#endif

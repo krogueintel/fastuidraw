@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,11 +12,12 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-#pragma once
+#ifndef FASTUIDRAW_BLEND_MODE_HPP
+#define FASTUIDRAW_BLEND_MODE_HPP
 
 #include <stdint.h>
 
@@ -42,10 +43,29 @@ namespace fastuidraw
      */
     enum equation_t
       {
+        /*!
+         * Indicates to add the values.
+         */
         ADD,
+
+        /*!
+         * Indicates to subtract the values.
+         */
         SUBTRACT,
+
+        /*!
+         * Indicates to reverse-subtract the values.
+         */
         REVERSE_SUBTRACT,
+
+        /*!
+         * Indicates to min the values.
+         */
         MIN,
+
+        /*!
+         * Indicates to max the values.
+         */
         MAX,
 
         NUMBER_OPS
@@ -58,31 +78,139 @@ namespace fastuidraw
      */
     enum func_t
       {
+        /*!
+         * Indicates the coefficient value of 0 in each channel.
+         */
         ZERO,
+
+        /*!
+         * Indicates the coefficient value of 1 in each channel.
+         */
         ONE,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is the output of the fragment shader.
+         */
         SRC_COLOR,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is one minus the output of the fragment shader.
+         */
         ONE_MINUS_SRC_COLOR,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is the value in the framebuffer.
+         */
         DST_COLOR,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is one minus the value in the framebuffer.
+         */
         ONE_MINUS_DST_COLOR,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is the alpha value of the output of the fragment shader.
+         */
         SRC_ALPHA,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is one minus the alpha value of the output of the
+         * fragment shader.
+         */
         ONE_MINUS_SRC_ALPHA,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is the alpha value in the framebuffer.
+         */
         DST_ALPHA,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is one minus the alpha value in the framebuffer.
+         */
         ONE_MINUS_DST_ALPHA,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * comes from the constant color value specified as part
+         * of the 3D API state.
+         */
         CONSTANT_COLOR,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * comes from one minus the constant color value specified
+         * as part of the 3D API state.
+         */
         ONE_MINUS_CONSTANT_COLOR,
+
+        /*!
+         * Indicates the coefficient where each channel is
+         * the alpha channel of the constant color value
+         * specified as part of the 3D API state.
+         */
         CONSTANT_ALPHA,
+
+        /*!
+         * Indicates the coefficient where each channel is
+         * one minus the alpha channel of the constant color
+         * value specified as part of the 3D API state.
+         */
         ONE_MINUS_CONSTANT_ALPHA,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is the alpha value of the output of the fragment shader
+         * clamped to [0, 1].
+         */
         SRC_ALPHA_SATURATE,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is the secondary output of the fragment shader (the
+         * secondary output as present in dual-src blending).
+         */
         SRC1_COLOR,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is one minus the secondary output of the fragment
+         * shader (the secondary output as present in dual-src
+         * blending).
+         */
         ONE_MINUS_SRC1_COLOR,
+
+        /*!
+         * Indicates the coefficient where each channel value
+         * is the alpha channel of the secondary output of the
+         * fragment shader (the secondary output as present in
+         * dual-src blending).
+         */
         SRC1_ALPHA,
+
+        /*!
+         * Indicates the coefficient  where each channel value
+         * is one minus the alpha channel of the secondary output
+         * of the fragment shader (the secondary output as present
+         * in dual-src blending).
+         */
         ONE_MINUS_SRC1_ALPHA,
 
         NUMBER_FUNCS,
       };
 
     /*!
-     * Ctor.
+     * Ctor. Initializes as valid with blending on,
+     * with blend equation as add in all channels,
+     * with src func in all channels as \ref ONE
+     * and dest func in all channels as \ref ZERO.
      */
     BlendMode(void)
     {
@@ -111,6 +239,36 @@ namespace fastuidraw
     operator!=(BlendMode rhs) const
     {
       return m_value != rhs.m_value;
+    }
+
+    /*!
+     * Set the BlendMode to a value to mark it as invalid.
+     */
+    BlendMode&
+    set_as_invalid(void)
+    {
+      m_value |= (1u << invalid_bit);
+      return *this;
+    }
+
+    /*!
+     * Set the BlendMode to a value to mark it as valid.
+     */
+    BlendMode&
+    set_as_valid(void)
+    {
+      m_value &= ~(1u << invalid_bit);
+      return *this;
+    }
+
+    /*!
+     * Returns true if the BlendMode has been marked as invalid,
+     * see set_as_invalid() and set_as_valid().
+     */
+    bool
+    is_valid(void) const
+    {
+      return !(m_value & (1u << invalid_bit));
     }
 
     /*!
@@ -316,6 +474,22 @@ namespace fastuidraw
       return func_dst(dst);
     }
 
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum equation_t v);
+
+    /*!
+     * Returns a \ref c_string for an enumerated value.
+     * \param v value to get the label-string of.
+     */
+    static
+    c_string
+    label(enum func_t v);
+
   private:
     enum
       {
@@ -334,10 +508,14 @@ namespace fastuidraw
         src_func_alpha_bit0 = src_func_rgb_bit0 + func_num_bits,
 
         dst_func_rgb_bit0 = src_func_alpha_bit0 + func_num_bits,
-        dst_func_alpha_bit0 = dst_func_rgb_bit0 + func_num_bits
+        dst_func_alpha_bit0 = dst_func_rgb_bit0 + func_num_bits,
+
+        invalid_bit = dst_func_alpha_bit0 + func_num_bits,
       };
 
     uint32_t m_value;
   };
 /*! @} */
 }
+
+#endif

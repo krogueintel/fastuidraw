@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,16 +12,16 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
 #include <vector>
 #include <fastuidraw/text/glyph_render_data_texels.hpp>
-#include "../private/pack_texels.hpp"
-#include "../private/util_private.hpp"
-#include "../private/util_private_ostream.hpp"
+#include <private/pack_texels.hpp>
+#include <private/util_private.hpp>
+#include <private/util_private_ostream.hpp>
 
 namespace
 {
@@ -99,17 +99,25 @@ resize(fastuidraw::ivec2 sz)
   d->resize(sz);
 }
 
+fastuidraw::c_array<const fastuidraw::c_string>
+fastuidraw::GlyphRenderDataTexels::
+render_info_labels(void) const
+{
+  return c_array<const c_string>();
+}
+
 enum fastuidraw::return_code
 fastuidraw::GlyphRenderDataTexels::
 upload_to_atlas(GlyphAtlasProxy &atlas_proxy,
-                GlyphAttribute::Array &attributes) const
+                GlyphAttribute::Array &attributes,
+                c_array<float> /* render_costs */) const
 {
   GlyphDataPrivate *d;
   d = static_cast<GlyphDataPrivate*>(m_d);
 
   attributes.resize(2);
   attributes[0].pack_texel_rect(d->m_resolution.x(),
-				d->m_resolution.y());
+                                d->m_resolution.y());
 
   if (d->m_texels.empty())
     {
@@ -117,17 +125,18 @@ upload_to_atlas(GlyphAtlasProxy &atlas_proxy,
       return routine_success;
     }
 
-  std::vector<generic_data> data;
+  std::vector<uint32_t> data;
   int location;
 
   detail::pack_texels(uvec2(d->m_resolution),
-		      make_c_array(d->m_texels),
-		      &data);
+                      make_c_array(d->m_texels),
+                      &data);
   location = atlas_proxy.allocate_data(make_c_array(data));
   if (location == -1)
     {
       return routine_fail;
     }
   attributes[1].m_data = vecN<uint32_t, 4>(location);
+
   return routine_success;
 }

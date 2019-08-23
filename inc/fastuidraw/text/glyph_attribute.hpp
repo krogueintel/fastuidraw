@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,12 +12,13 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
 
-#pragma once
+#ifndef FASTUIDRAW_GLYPH_ATTRIBUTE_HPP
+#define FASTUIDRAW_GLYPH_ATTRIBUTE_HPP
 
 #include <fastuidraw/util/util.hpp>
 #include <fastuidraw/util/vecN.hpp>
@@ -26,7 +27,7 @@
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
   /*!
@@ -60,22 +61,22 @@ namespace fastuidraw
       };
 
     /*!
-     * When packing 8-bit texel data into the  store,
-     * each 32-bit value of the store holds a 2x2 block of
-     * 8-bit texels. This enumeratoin describues the packing
+     * When packing 8-bit texel data into the store, each
+     * 32-bit value of the store holds a 2x2 block of 8-bit
+     * texels. This enumeration describes the packing an
      * an attribute to get the texel data.
      */
     enum rect_glyph_layout
       {
-	rect_width_num_bits = 8,
-	rect_height_num_bits = 8,
-	rect_x_num_bits = 8,
-	rect_y_num_bits = 8,
+        rect_width_num_bits = 8,
+        rect_height_num_bits = 8,
+        rect_x_num_bits = 8,
+        rect_y_num_bits = 8,
 
-	rect_width_bit0 = 0,
-	rect_height_bit0 = rect_width_bit0 + rect_width_num_bits,
-	rect_x_bit0 = rect_height_bit0 + rect_height_num_bits,
-	rect_y_bit0 = rect_x_bit0 + rect_x_num_bits,
+        rect_width_bit0 = 0,
+        rect_height_bit0 = rect_width_bit0 + rect_width_num_bits,
+        rect_x_bit0 = rect_height_bit0 + rect_height_num_bits,
+        rect_y_bit0 = rect_x_bit0 + rect_x_num_bits,
       };
 
     /*!
@@ -159,3 +160,5 @@ namespace fastuidraw
   };
 /*! @} */
 }
+
+#endif

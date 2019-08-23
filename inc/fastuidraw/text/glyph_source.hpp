@@ -4,7 +4,7 @@
  *
  * Copyright 2016 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,18 +12,19 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-#pragma once
+#ifndef FASTUIDRAW_GLYPH_SOURCE_HPP
+#define FASTUIDRAW_GLYPH_SOURCE_HPP
 
 #include <fastuidraw/text/font.hpp>
 #include <fastuidraw/text/glyph.hpp>
 
 namespace fastuidraw
 {
-/*!\addtogroup Text
+/*!\addtogroup Glyph
  * @{
  */
 
@@ -46,7 +47,7 @@ namespace fastuidraw
      * \param f value to assign to \ref m_font
      * \param g value to assign to \ref m_glyph_code
      */
-    GlyphSource(const reference_counted_ptr<const FontBase> &f, uint32_t g):
+    GlyphSource(const FontBase *f, uint32_t g):
       m_glyph_code(g)
     {
       m_font = (f && g < f->number_glyphs()) ? f : nullptr;
@@ -57,7 +58,7 @@ namespace fastuidraw
      * \param f value to assign to \ref m_font
      * \param g value to assign to \ref m_glyph_code
      */
-    GlyphSource(uint32_t g, const reference_counted_ptr<const FontBase> &f):
+    GlyphSource(uint32_t g, const FontBase *f):
       m_glyph_code(g)
     {
       m_font = (f && g < f->number_glyphs()) ? f : nullptr;
@@ -82,7 +83,9 @@ namespace fastuidraw
     /*!
      * Font of a \ref Glyph
      */
-    reference_counted_ptr<const FontBase> m_font;
+    const FontBase *m_font;
   };
 /*! @} */
 }
+
+#endif

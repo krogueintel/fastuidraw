@@ -13,7 +13,7 @@
  * http://mozilla.org/MPL/2.0/.
  *
  * \author Kevin Rogovin <kevin.rogovin@nomovok.com>
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
@@ -27,7 +27,7 @@
 #include <mutex>
 
 #include <fastuidraw/util/fastuidraw_memory.hpp>
-#include "../private/util_private.hpp"
+#include <private/util_private.hpp>
 
 #ifdef FASTUIDRAW_DEBUG
 

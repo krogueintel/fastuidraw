@@ -44,8 +44,8 @@ Cell(PainterWidget *p, const CellParams &params):
   m_line_brush(params.m_line_brush),
   m_item_location(params.m_size * 0.5f),
   m_text(params.m_pixel_size,
-	 fastuidraw::Painter::y_increases_downwards,
-	 params.m_glyph_cache),
+         fastuidraw::Painter::y_increases_downwards,
+         *params.m_glyph_cache),
   m_shared_state(params.m_state),
   m_timer_based_animation(params.m_timer_based_animation)
 {
@@ -55,11 +55,22 @@ Cell(PainterWidget *p, const CellParams &params):
        << "\n" << params.m_image_name;
 
   std::istringstream str(ostr.str());
-  create_formatted_text(m_text, str, params.m_font,
+  create_formatted_text(m_text,
+                        PainterEnums::y_increases_downwards,
+                        str, params.m_font.get(),
                         params.m_font_database);
 
   m_dimensions = params.m_size;
   m_table_pos = m_dimensions * vec2(params.m_table_pos);
+
+  if (params.m_image)
+    {
+      m_rect_dims = vec2(params.m_image->dimensions());
+    }
+  else
+    {
+      m_rect_dims = vec2(m_dimensions) * 0.25f;
+    }
 }
 
 void
@@ -111,13 +122,13 @@ pre_paint(void)
     }
 
   m_item_rotation =
-    static_cast<float>(M_PI) * static_cast<float>(m_thousandths_degrees_rotation) / (1000.0f * 180.0f);
+    static_cast<float>(FASTUIDRAW_PI) * static_cast<float>(m_thousandths_degrees_rotation) / (1000.0f * 180.0f);
 
   if (m_shared_state->m_rotating)
     {
       float r;
 
-      r = static_cast<float>(M_PI) * static_cast<float>(m_thousandths_degrees_cell_rotation) / (1000.0f * 180.0f);
+      r = static_cast<float>(FASTUIDRAW_PI) * static_cast<float>(m_thousandths_degrees_cell_rotation) / (1000.0f * 180.0f);
       m_parent_matrix_this.reset();
       m_parent_matrix_this.translate(m_dimensions * 0.5f + m_table_pos);
       m_parent_matrix_this.rotate(r);
@@ -127,6 +138,7 @@ pre_paint(void)
     {
       m_parent_matrix_this = float3x3(float2x2(), m_table_pos);
     }
+  m_draw_transparent = m_shared_state->m_draw_transparent;
 }
 
 void
@@ -136,7 +148,7 @@ paint_pre_children(const reference_counted_ptr<Painter> &painter)
   painter->save();
   painter->fill_rect(PainterData(m_background_brush),
                      Rect().size(m_dimensions),
-                     Painter::shader_anti_alias_none);
+                     false);
 
   painter->translate(m_item_location);
   painter->rotate(m_item_rotation);
@@ -144,28 +156,20 @@ paint_pre_children(const reference_counted_ptr<Painter> &painter)
   if (m_shared_state->m_draw_image)
     {
       vec2 wh;
-      if (m_image_brush.value().image())
-        {
-          wh = vec2(m_image_brush.value().image()->dimensions());
-        }
-      else
-        {
-          wh = vec2(m_dimensions) * 0.25f;
-        }
+      wh = m_rect_dims;
       painter->save();
       painter->translate(-wh * 0.5f);
-      painter->composite_shader(m_shared_state->m_rect_composite_mode);
       painter->blend_shader(m_shared_state->m_rect_blend_mode);
       painter->fill_rect(PainterData(m_image_brush),
                          Rect().size(wh),
-                         Painter::shader_anti_alias_none);
+                         false);
       painter->restore();
     }
 
   if (m_shared_state->m_draw_text)
     {
       painter->draw_glyphs(PainterData(m_text_brush), m_text,
-			   GlyphRenderer(m_shared_state->m_glyph_render));
+                           GlyphRenderer(m_shared_state->m_glyph_render));
     }
 
   painter->restore();
@@ -173,19 +177,15 @@ paint_pre_children(const reference_counted_ptr<Painter> &painter)
   if (m_shared_state->m_rotating && m_shared_state->m_stroke_width > 0.0f)
     {
       PainterStrokeParams st;
-      enum Painter::shader_anti_alias_t aa_mode;
 
       st.miter_limit(-1.0f);
       st.width(m_shared_state->m_stroke_width);
-      aa_mode = (m_shared_state->m_anti_alias_stroking) ?
-        Painter::shader_anti_alias_auto :
-        Painter::shader_anti_alias_none;
 
       painter->stroke_path(PainterData(m_line_brush, &st),
                            m_shared_state->m_path,
                            StrokingStyle()
                            .join_style(Painter::miter_clip_joins),
-                           aa_mode);
+                           m_shared_state->m_anti_alias_stroking);
     }
   m_shared_state->m_cells_drawn++;
 }

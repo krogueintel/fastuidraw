@@ -4,7 +4,7 @@
  *
  * Copyright 2018 by Intel.
  *
- * Contact: kevin.rogovin@intel.com
+ * Contact: kevin.rogovin@gmail.com
  *
  * This Source Code Form is subject to the
  * terms of the Mozilla Public License, v. 2.0.
@@ -12,50 +12,82 @@
  * this file, You can obtain one at
  * http://mozilla.org/MPL/2.0/.
  *
- * \author Kevin Rogovin <kevin.rogovin@intel.com>
+ * \author Kevin Rogovin <kevin.rogovin@gmail.com>
  *
  */
 
-
 void
-fastuidraw_vert_brush_processing(in vec2 in_p, in fastuidraw_shader_header h)
+fastuidraw_gl_vert_brush_main(in uint sub_shader, inout uint shader_data_block, in vec2 p)
 {
-  uint shader;
-  uint data_ptr;
-  fastuidraw_brush_image_data image;
-  fastuidraw_brush_gradient gradient;
-  fastuidraw_brush_repeat_window repeat_window;
-  vec2 p;
+  FASTUIDRAW_LOCAL(fastuidraw_brush_header) header;
+  FASTUIDRAW_LOCAL(fastuidraw_brush_repeat_window) repeat_window;
+  vec2 color_rg, color_ba;
 
-  p = in_p;
-  shader = h.brush_shader;
-  data_ptr = h.brush_shader_data_location;
+  /* Directly unpack brush data into brush varyings */
+  FASTUIDRAW_LOCAL(fastuidraw_read_brush_header)(shader_data_block, header);
+  shader_data_block += FASTUIDRAW_LOCAL(fastuidraw_read_brush_header_size)();
 
-  #ifdef FASTUIDRAW_PAINTER_UNPACK_AT_FRAGMENT_SHADER
+  /* unpack the colr values and multiply by alpha */
+  color_rg = fastuidraw_unpackHalf2x16(header.red_green);
+  color_ba = fastuidraw_unpackHalf2x16(header.blue_alpha);
+  fastuidraw_brush_color_x = color_rg.x * color_ba.y;
+  fastuidraw_brush_color_y = color_rg.y * color_ba.y;
+  fastuidraw_brush_color_z = color_ba.x * color_ba.y;
+  fastuidraw_brush_color_w = color_ba.y;
+
+  /* save what features are active to a varying */
+  fastuidraw_brush_features = header.features;
+
+  if ((header.features & uint(fastuidraw_brush_repeat_window_mask)) != 0u)
     {
-      data_ptr += fastuidraw_painter_offset_to_transformation(shader);
+      FASTUIDRAW_LOCAL(fastuidraw_read_brush_repeat_window)(shader_data_block, repeat_window);
+      shader_data_block += FASTUIDRAW_LOCAL(fastuidraw_read_brush_repeat_window_size)();
     }
-  #else
+  else
     {
-      /* fastuidraw_painter_brush_unpack_values() increments data_ptr
-       * to the location of the transformation values for the brush
-       */
-      fastuidraw_painter_brush_unpack_values(shader, data_ptr);
+      repeat_window.xy = vec2(0.0, 0.0);
+      repeat_window.wh = vec2(1.0, 1.0);
     }
-  #endif
 
-  if (fastuidraw_brush_shader_has_transformation_matrix(shader))
+  fastuidraw_brush_repeat_window_x = repeat_window.xy.x;
+  fastuidraw_brush_repeat_window_y = repeat_window.xy.y;
+  fastuidraw_brush_repeat_window_w = repeat_window.wh.x;
+  fastuidraw_brush_repeat_window_h = repeat_window.wh.y;
+
+  if ((header.features & fastuidraw_brush_transformation_matrix_mask) != 0u)
     {
       mat2 m;
-      data_ptr = fastuidraw_read_brush_transformation_matrix(data_ptr, m);
+      FASTUIDRAW_LOCAL(fastuidraw_read_brush_transformation_matrix)(shader_data_block, m);
+      shader_data_block += FASTUIDRAW_LOCAL(fastuidraw_read_brush_transformation_matrix_size)();
       p = m * p;
     }
 
-  if (fastuidraw_brush_shader_has_transformation_translation(shader))
+  if ((header.features & fastuidraw_brush_transformation_translation_mask) != 0u)
     {
       vec2 q;
-      data_ptr = fastuidraw_read_brush_transformation_translation(data_ptr, q);
+      FASTUIDRAW_LOCAL(fastuidraw_read_brush_transformation_translation)(shader_data_block, q);
+      shader_data_block += FASTUIDRAW_LOCAL(fastuidraw_read_brush_transformation_translation_size)();
       p += q;
+    }
+
+  if ((header.features & fastuidraw_brush_image_mask) != 0u)
+    {
+      uint image_sub_shader;
+
+      image_sub_shader = FASTUIDRAW_EXTRACT_BITS(fastuidraw_brush_image_bit0,
+                                                 fastuidraw_brush_image_num_bits,
+                                                 header.features);
+      image_brush(image_sub_shader, shader_data_block, p);
+    }
+
+  if ((header.features & fastuidraw_brush_gradient_mask) != 0u)
+    {
+      uint gradient_sub_shader;
+
+      gradient_sub_shader = FASTUIDRAW_EXTRACT_BITS(fastuidraw_brush_gradient_bit0,
+                                                    fastuidraw_brush_gradient_num_bits,
+                                                    header.features);
+      gradient_brush(gradient_sub_shader, shader_data_block, p);
     }
 
   fastuidraw_brush_p_x = p.x;
