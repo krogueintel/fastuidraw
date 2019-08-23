@@ -150,6 +150,7 @@ private:
   command_line_argument_value<bool> m_init_draw_images;
   command_line_argument_value<float> m_init_stroke_width;
   command_line_argument_value<bool> m_init_anti_alias_stroking;
+  command_line_argument_value<bool> m_init_cells_transparent;
 
   CellSharedState m_cell_shared_state;
   TableParams m_table_params;
@@ -228,6 +229,9 @@ painter_cells(void):
   m_init_anti_alias_stroking(true, "init_antialias_stroking",
                              "Initial value for anti-aliasing for stroking",
                              *this),
+  m_init_cells_transparent(false, "init_cells_transparent",
+			   "Initial value for if cells are drawn transparent",
+			   *this),
   m_table(NULL)
 {
   std::cout << "Controls:\n"
@@ -404,6 +408,7 @@ derived_init(int w, int h)
   m_cell_shared_state.m_rotating = m_init_cell_rotating.value();
   m_cell_shared_state.m_path_paint.setStrokeWidth(SkScalar(m_init_stroke_width.value()));
   m_cell_shared_state.m_path_paint.setAntiAlias(m_init_anti_alias_stroking.value());
+  m_cell_shared_state.m_draw_transparent = m_init_cells_transparent.value();
 
   /* init m_zoomer so that table contents fit into screen.
    */
