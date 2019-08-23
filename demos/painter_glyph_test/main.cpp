@@ -1232,7 +1232,7 @@ draw_glyphs(float us)
       PainterBrush brush;
 
       brush.color(0.0f, 1.0f, 1.0f, 1.0f);
-      draw_text(ostr.str(), 32.0f, m_default_font.get(), GlyphRenderer(restricted_rays_glyph),
+      draw_text(ostr.str(), 32.0f, m_default_font.get(), GlyphRenderer(),
                 PainterData(&brush), m_screen_orientation.value());
     }
   else
@@ -1318,7 +1318,7 @@ draw_glyphs(float us)
       PainterBrush brush;
 
       brush.color(0.0f, 1.0f, 1.0f, 1.0f);
-      draw_text(ostr.str(), 32.0f, m_default_font.get(), GlyphRenderer(distance_field_glyph),
+      draw_text(ostr.str(), 32.0f, m_default_font.get(), GlyphRenderer(),
                 PainterData(&brush), m_screen_orientation.value());
     }
 
